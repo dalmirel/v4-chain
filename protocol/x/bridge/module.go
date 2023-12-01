@@ -16,9 +16,9 @@ import (
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/dydxprotocol/v4/x/bridge/client/cli"
-	"github.com/dydxprotocol/v4/x/bridge/keeper"
-	"github.com/dydxprotocol/v4/x/bridge/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/bridge/client/cli"
+	"github.com/dydxprotocol/v4-chain/protocol/x/bridge/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/bridge/types"
 )
 
 var (
@@ -123,6 +123,7 @@ func (am AppModule) Name() string {
 // module-specific GRPC queries.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+	types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
 }
 
 // RegisterInvariants registers the bridge module's invariants.

@@ -2,12 +2,35 @@ package events
 
 const (
 	// Cosmos event attribute values for the subtype attribute for different indexer events.
+	// Keep these constants in sync with:
+	// https://github.com/dydxprotocol/indexer/blob/master/services/ender/src/lib/types.ts.
+	// Ender uses these to maintain a mapping between event type and event proto.
 	SubtypeOrderFill        = "order_fill"
 	SubtypeSubaccountUpdate = "subaccount_update"
 	SubtypeTransfer         = "transfer"
 	SubtypeMarket           = "market"
 	SubtypeFundingValues    = "funding_values"
 	SubtypeStatefulOrder    = "stateful_order"
+	SubtypeAsset            = "asset"
+	SubtypePerpetualMarket  = "perpetual_market"
+	SubtypeLiquidityTier    = "liquidity_tier"
+	SubtypeUpdatePerpetual  = "update_perpetual"
+	SubtypeUpdateClobPair   = "update_clob_pair"
+)
+
+const (
+	// Indexer event versions.
+	OrderFillEventVersion        uint32 = 1
+	SubaccountUpdateEventVersion uint32 = 1
+	TransferEventVersion         uint32 = 1
+	MarketEventVersion           uint32 = 1
+	FundingValuesEventVersion    uint32 = 1
+	StatefulOrderEventVersion    uint32 = 1
+	AssetEventVersion            uint32 = 1
+	PerpetualMarketEventVersion  uint32 = 1
+	LiquidityTierEventVersion    uint32 = 1
+	UpdatePerpetualEventVersion  uint32 = 1
+	UpdateClobPairEventVersion   uint32 = 1
 )
 
 var OnChainEventSubtypes = []string{
@@ -17,4 +40,8 @@ var OnChainEventSubtypes = []string{
 	SubtypeMarket,
 	SubtypeFundingValues,
 	SubtypeStatefulOrder,
+	SubtypeAsset,
+	SubtypePerpetualMarket,
+	SubtypeLiquidityTier,
+	SubtypeUpdatePerpetual,
 }

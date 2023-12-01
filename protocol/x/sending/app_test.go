@@ -9,22 +9,22 @@ import (
 	"github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	"github.com/dydxprotocol/v4/dtypes"
-	"github.com/dydxprotocol/v4/lib"
-	testapp "github.com/dydxprotocol/v4/testutil/app"
-	"github.com/dydxprotocol/v4/testutil/rand"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	testapp "github.com/dydxprotocol/v4-chain/protocol/testutil/app"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/rand"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dydxprotocol/v4/indexer"
-	indexerevents "github.com/dydxprotocol/v4/indexer/events"
-	"github.com/dydxprotocol/v4/indexer/indexer_manager"
-	"github.com/dydxprotocol/v4/indexer/msgsender"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	sample_testutil "github.com/dydxprotocol/v4/testutil/sample"
-	testtx "github.com/dydxprotocol/v4/testutil/tx"
-	assetstypes "github.com/dydxprotocol/v4/x/assets/types"
-	sendingtypes "github.com/dydxprotocol/v4/x/sending/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/msgsender"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	sample_testutil "github.com/dydxprotocol/v4-chain/protocol/testutil/sample"
+	testtx "github.com/dydxprotocol/v4-chain/protocol/testutil/tx"
+	assetstypes "github.com/dydxprotocol/v4-chain/protocol/x/assets/types"
+	sendingtypes "github.com/dydxprotocol/v4-chain/protocol/x/sending/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 func TestMsgDepositToSubaccount(t *testing.T) {
@@ -118,7 +118,7 @@ func TestMsgDepositToSubaccount(t *testing.T) {
 				ctx,
 				tApp.App,
 				testapp.MustMakeCheckTxOptions{
-					AccAddressForSigning: testtx.MustGetSignerAddress(&msgDepositToSubaccount),
+					AccAddressForSigning: testtx.MustGetOnlySignerAddress(&msgDepositToSubaccount),
 					Gas:                  100_000,
 				},
 				&msgDepositToSubaccount,
@@ -131,10 +131,10 @@ func TestMsgDepositToSubaccount(t *testing.T) {
 			}
 			// Check that CheckTx succeeds or errors out as expected.
 			if tc.checkTxIsError {
-				require.True(t, checkTxResp.IsErr())
+				require.Conditionf(t, checkTxResp.IsErr, "Expected CheckTx to error. Response: %+v", checkTxResp)
 				return
 			}
-			require.True(t, checkTxResp.IsOK())
+			require.Conditionf(t, checkTxResp.IsOK, "Expected CheckTx to succeed. Response: %+v", checkTxResp)
 
 			// Check that no indexer events are emitted so far.
 			require.Empty(t, msgSender.GetOnchainMessages())
@@ -160,22 +160,37 @@ func TestMsgDepositToSubaccount(t *testing.T) {
 					Time:   ctx.BlockTime(),
 					Events: []*indexer_manager.IndexerTendermintEvent{
 						{
-							Subtype: indexerevents.SubtypeSubaccountUpdate,
-							Data: indexer_manager.GetB64EncodedEventMessage(
+							Subtype:             indexerevents.SubtypeSubaccountUpdate,
+							OrderingWithinBlock: &indexer_manager.IndexerTendermintEvent_TransactionIndex{},
+							EventIndex:          0,
+							Version:             indexerevents.SubaccountUpdateEventVersion,
+							DataBytes: indexer_manager.GetBytes(
 								indexerevents.NewSubaccountUpdateEvent(
 									&tc.subaccountId,
 									[]*satypes.PerpetualPosition{},
 									[]*satypes.AssetPosition{
 										{
-											AssetId:  lib.UsdcAssetId,
+											AssetId:  assetstypes.AssetUsdc.Id,
 											Quantums: dtypes.NewIntFromBigInt(subaccountQuantumsAfterDeposit),
 										},
 									},
 									nil, // no funding payment should have occurred
 								),
 							),
+						},
+						{
+							Subtype:             indexerevents.SubtypeTransfer,
 							OrderingWithinBlock: &indexer_manager.IndexerTendermintEvent_TransactionIndex{},
-							EventIndex:          0,
+							EventIndex:          1,
+							Version:             indexerevents.TransferEventVersion,
+							DataBytes: indexer_manager.GetBytes(
+								indexerevents.NewDepositEvent(
+									tc.accountAccAddress.String(),
+									tc.subaccountId,
+									tc.asset.Id,
+									satypes.BaseQuantums(tc.quantums.Uint64()),
+								),
+							),
 						},
 					},
 					TxHashes: []string{string(lib.GetTxHash(CheckTx_MsgDepositToSubaccount.GetTx()))},
@@ -197,7 +212,7 @@ func TestMsgDepositToSubaccount_NonExistentAccount(t *testing.T) {
 	msgDepositToSubaccount := sendingtypes.MsgDepositToSubaccount{
 		Sender:    randomAccount.Address.String(),
 		Recipient: constants.Alice_Num1,
-		AssetId:   lib.UsdcAssetId,
+		AssetId:   assetstypes.AssetUsdc.Id,
 		Quantums:  uint64(1_000_000),
 	}
 
@@ -292,7 +307,7 @@ func TestMsgWithdrawFromSubaccount(t *testing.T) {
 				ctx,
 				tApp.App,
 				testapp.MustMakeCheckTxOptions{
-					AccAddressForSigning: testtx.MustGetSignerAddress(&msgWithdrawFromSubaccount),
+					AccAddressForSigning: testtx.MustGetOnlySignerAddress(&msgWithdrawFromSubaccount),
 					Gas:                  100_000,
 				},
 				&msgWithdrawFromSubaccount,
@@ -305,10 +320,10 @@ func TestMsgWithdrawFromSubaccount(t *testing.T) {
 			}
 			// Check that CheckTx succeeds or errors out as expected.
 			if tc.checkTxIsError {
-				require.True(t, checkTxResp.IsErr())
+				require.Conditionf(t, checkTxResp.IsErr, "Expected CheckTx to error. Response: %+v", checkTxResp)
 				return
 			}
-			require.True(t, checkTxResp.IsOK())
+			require.Conditionf(t, checkTxResp.IsOK, "Expected CheckTx to succeed. Response: %+v", checkTxResp)
 
 			// Check that no indexer events are emitted so far.
 			require.Empty(t, msgSender.GetOnchainMessages())
@@ -334,22 +349,37 @@ func TestMsgWithdrawFromSubaccount(t *testing.T) {
 					Time:   ctx.BlockTime(),
 					Events: []*indexer_manager.IndexerTendermintEvent{
 						{
-							Subtype: indexerevents.SubtypeSubaccountUpdate,
-							Data: indexer_manager.GetB64EncodedEventMessage(
+							Subtype:             indexerevents.SubtypeSubaccountUpdate,
+							OrderingWithinBlock: &indexer_manager.IndexerTendermintEvent_TransactionIndex{},
+							EventIndex:          0,
+							Version:             indexerevents.SubaccountUpdateEventVersion,
+							DataBytes: indexer_manager.GetBytes(
 								indexerevents.NewSubaccountUpdateEvent(
 									&tc.subaccountId,
 									[]*satypes.PerpetualPosition{},
 									[]*satypes.AssetPosition{
 										{
-											AssetId:  lib.UsdcAssetId,
+											AssetId:  assetstypes.AssetUsdc.Id,
 											Quantums: dtypes.NewIntFromBigInt(subaccountQuantumsAfterWithdraw),
 										},
 									},
 									nil, // no funding payment should have occurred
 								),
 							),
+						},
+						{
+							Subtype:             indexerevents.SubtypeTransfer,
 							OrderingWithinBlock: &indexer_manager.IndexerTendermintEvent_TransactionIndex{},
-							EventIndex:          0,
+							EventIndex:          1,
+							Version:             indexerevents.TransferEventVersion,
+							DataBytes: indexer_manager.GetBytes(
+								indexerevents.NewWithdrawEvent(
+									tc.subaccountId,
+									tc.accountAccAddress.String(),
+									tc.asset.Id,
+									satypes.BaseQuantums(tc.quantums.Uint64()),
+								),
+							),
 						},
 					},
 					TxHashes: []string{string(lib.GetTxHash(CheckTx_MsgWithdrawFromSubaccount.GetTx()))},
@@ -374,7 +404,7 @@ func TestMsgWithdrawFromSubaccount_NonExistentSubaccount(t *testing.T) {
 			Number: 0,
 		},
 		Recipient: constants.AliceAccAddress.String(),
-		AssetId:   lib.UsdcAssetId,
+		AssetId:   assetstypes.AssetUsdc.Id,
 		Quantums:  uint64(1_000_000),
 	}
 
@@ -414,7 +444,7 @@ func testNonExistentSender(
 	)
 
 	// Check that CheckTx failed due to unknown address.
-	require.True(t, checkTxResp.IsErr())
+	require.Conditionf(t, checkTxResp.IsErr, "Expected CheckTx to error. Response: %+v", checkTxResp)
 	require.Contains(t, checkTxResp.Log, "unknown address")
 }
 

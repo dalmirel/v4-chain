@@ -1,36 +1,47 @@
 {
-  "exchanges":[
+  "exchanges": [
     {
-      "exchangeName":"Binance",
-      "ticker":"\"ADAUSDT\""
+      "exchangeName": "Binance",
+      "ticker": "ADAUSDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"BinanceUS",
-      "ticker":"\"ADAUSD\""
+      "exchangeName": "Bybit",
+      "ticker": "ADAUSDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Bitfinex",
-      "ticker":"tADAUSD"
+      "exchangeName": "CoinbasePro",
+      "ticker": "ADA-USD"
     },
     {
-      "exchangeName":"CoinbasePro",
-      "ticker":"ADA-USD"
+      "exchangeName": "Gate",
+      "ticker": "ADA_USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Gate",
-      "ticker":"ADA_USDT"
+      "exchangeName": "Huobi",
+      "ticker": "adausdt",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Huobi",
-      "ticker":"adausdt"
+      "exchangeName": "Kraken",
+      "ticker": "ADAUSD"
     },
     {
-      "exchangeName":"Kraken",
-      "ticker":"ADAUSD"
+      "exchangeName": "Kucoin",
+      "ticker": "ADA-USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Kucoin",
-      "ticker":"ADA-USDT"
+      "exchangeName": "Mexc",
+      "ticker": "ADA_USDT",
+      "adjustByMarket": "USDT-USD"
+    },
+    {
+      "exchangeName": "Okx",
+      "ticker": "ADA-USDT",
+      "adjustByMarket": "USDT-USD"
     }
   ]
 }

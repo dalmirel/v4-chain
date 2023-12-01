@@ -5,10 +5,12 @@ package events
 
 import (
 	fmt "fmt"
+	_ "github.com/cosmos/cosmos-proto"
 	_ "github.com/cosmos/gogoproto/gogoproto"
 	proto "github.com/cosmos/gogoproto/proto"
-	github_com_dydxprotocol_v4_dtypes "github.com/dydxprotocol/v4/dtypes"
-	v1 "github.com/dydxprotocol/v4/indexer/protocol/v1"
+	github_com_dydxprotocol_v4_chain_protocol_dtypes "github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	v1 "github.com/dydxprotocol/v4-chain/protocol/indexer/protocol/v1"
+	shared "github.com/dydxprotocol/v4-chain/protocol/indexer/shared"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -74,7 +76,7 @@ type FundingUpdateV1 struct {
 	FundingValuePpm int32 `protobuf:"varint,2,opt,name=funding_value_ppm,json=fundingValuePpm,proto3" json:"funding_value_ppm,omitempty"`
 	// funding index is required if and only if parent `FundingEvent` type is
 	// `TYPE_FUNDING_RATE_AND_INDEX`.
-	FundingIndex github_com_dydxprotocol_v4_dtypes.SerializableInt `protobuf:"bytes,3,opt,name=funding_index,json=fundingIndex,proto3,customtype=github.com/dydxprotocol/v4/dtypes.SerializableInt" json:"funding_index"`
+	FundingIndex github_com_dydxprotocol_v4_chain_protocol_dtypes.SerializableInt `protobuf:"bytes,3,opt,name=funding_index,json=fundingIndex,proto3,customtype=github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt" json:"funding_index"`
 }
 
 func (m *FundingUpdateV1) Reset()         { *m = FundingUpdateV1{} }
@@ -508,26 +510,124 @@ func (m *MarketModifyEventV1) GetBase() *MarketBaseEventV1 {
 	return nil
 }
 
-// TransferEvent message contains all the information about a transfer on
-// the V4 chain. A transfer also produces 2 separate SubaccountUpdateEvent
-// messages, 1 for recipient and 1 for sender, with the updated asset
-// positions.
+// SourceOfFunds is the source of funds in a transfer event.
+type SourceOfFunds struct {
+	//	one of below
+	//
+	// - a subaccount ID
+	// - a wallet address
+	//
+	// Types that are valid to be assigned to Source:
+	//
+	//	*SourceOfFunds_SubaccountId
+	//	*SourceOfFunds_Address
+	Source isSourceOfFunds_Source `protobuf_oneof:"source"`
+}
+
+func (m *SourceOfFunds) Reset()         { *m = SourceOfFunds{} }
+func (m *SourceOfFunds) String() string { return proto.CompactTextString(m) }
+func (*SourceOfFunds) ProtoMessage()    {}
+func (*SourceOfFunds) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{7}
+}
+func (m *SourceOfFunds) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SourceOfFunds) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SourceOfFunds.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SourceOfFunds) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SourceOfFunds.Merge(m, src)
+}
+func (m *SourceOfFunds) XXX_Size() int {
+	return m.Size()
+}
+func (m *SourceOfFunds) XXX_DiscardUnknown() {
+	xxx_messageInfo_SourceOfFunds.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SourceOfFunds proto.InternalMessageInfo
+
+type isSourceOfFunds_Source interface {
+	isSourceOfFunds_Source()
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type SourceOfFunds_SubaccountId struct {
+	SubaccountId *v1.IndexerSubaccountId `protobuf:"bytes,1,opt,name=subaccount_id,json=subaccountId,proto3,oneof" json:"subaccount_id,omitempty"`
+}
+type SourceOfFunds_Address struct {
+	Address string `protobuf:"bytes,2,opt,name=address,proto3,oneof" json:"address,omitempty"`
+}
+
+func (*SourceOfFunds_SubaccountId) isSourceOfFunds_Source() {}
+func (*SourceOfFunds_Address) isSourceOfFunds_Source()      {}
+
+func (m *SourceOfFunds) GetSource() isSourceOfFunds_Source {
+	if m != nil {
+		return m.Source
+	}
+	return nil
+}
+
+func (m *SourceOfFunds) GetSubaccountId() *v1.IndexerSubaccountId {
+	if x, ok := m.GetSource().(*SourceOfFunds_SubaccountId); ok {
+		return x.SubaccountId
+	}
+	return nil
+}
+
+func (m *SourceOfFunds) GetAddress() string {
+	if x, ok := m.GetSource().(*SourceOfFunds_Address); ok {
+		return x.Address
+	}
+	return ""
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*SourceOfFunds) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*SourceOfFunds_SubaccountId)(nil),
+		(*SourceOfFunds_Address)(nil),
+	}
+}
+
+// TransferEvent message contains all the information about a transfer,
+// deposit-to-subaccount, or withdraw-from-subaccount on the V4 chain.
+// When a subaccount is involved, a SubaccountUpdateEvent message will
+// be produced with the updated asset positions.
 type TransferEventV1 struct {
-	// The sender subaccount ID.
-	SenderSubaccountId v1.IndexerSubaccountId `protobuf:"bytes,1,opt,name=sender_subaccount_id,json=senderSubaccountId,proto3" json:"sender_subaccount_id"`
-	// The recipient subaccount ID.
-	RecipientSubaccountId v1.IndexerSubaccountId `protobuf:"bytes,2,opt,name=recipient_subaccount_id,json=recipientSubaccountId,proto3" json:"recipient_subaccount_id"`
+	SenderSubaccountId    *v1.IndexerSubaccountId `protobuf:"bytes,1,opt,name=sender_subaccount_id,json=senderSubaccountId,proto3" json:"sender_subaccount_id,omitempty"`
+	RecipientSubaccountId *v1.IndexerSubaccountId `protobuf:"bytes,2,opt,name=recipient_subaccount_id,json=recipientSubaccountId,proto3" json:"recipient_subaccount_id,omitempty"`
 	// Id of the asset transfered.
 	AssetId uint32 `protobuf:"varint,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	// The amount of asset in quantums to transfer.
 	Amount uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	// The sender is one of below
+	// - a subaccount ID (in transfer and withdraw events).
+	// - a wallet address (in deposit events).
+	Sender *SourceOfFunds `protobuf:"bytes,5,opt,name=sender,proto3" json:"sender,omitempty"`
+	// The recipient is one of below
+	// - a subaccount ID (in transfer and deposit events).
+	// - a wallet address (in withdraw events).
+	Recipient *SourceOfFunds `protobuf:"bytes,6,opt,name=recipient,proto3" json:"recipient,omitempty"`
 }
 
 func (m *TransferEventV1) Reset()         { *m = TransferEventV1{} }
 func (m *TransferEventV1) String() string { return proto.CompactTextString(m) }
 func (*TransferEventV1) ProtoMessage()    {}
 func (*TransferEventV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{7}
+	return fileDescriptor_6331dfb59c6fd2bb, []int{8}
 }
 func (m *TransferEventV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -556,18 +656,18 @@ func (m *TransferEventV1) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_TransferEventV1 proto.InternalMessageInfo
 
-func (m *TransferEventV1) GetSenderSubaccountId() v1.IndexerSubaccountId {
+func (m *TransferEventV1) GetSenderSubaccountId() *v1.IndexerSubaccountId {
 	if m != nil {
 		return m.SenderSubaccountId
 	}
-	return v1.IndexerSubaccountId{}
+	return nil
 }
 
-func (m *TransferEventV1) GetRecipientSubaccountId() v1.IndexerSubaccountId {
+func (m *TransferEventV1) GetRecipientSubaccountId() *v1.IndexerSubaccountId {
 	if m != nil {
 		return m.RecipientSubaccountId
 	}
-	return v1.IndexerSubaccountId{}
+	return nil
 }
 
 func (m *TransferEventV1) GetAssetId() uint32 {
@@ -584,6 +684,20 @@ func (m *TransferEventV1) GetAmount() uint64 {
 	return 0
 }
 
+func (m *TransferEventV1) GetSender() *SourceOfFunds {
+	if m != nil {
+		return m.Sender
+	}
+	return nil
+}
+
+func (m *TransferEventV1) GetRecipient() *SourceOfFunds {
+	if m != nil {
+		return m.Recipient
+	}
+	return nil
+}
+
 // OrderFillEvent message contains all the information from an order match in
 // the V4 chain. This includes the maker/taker orders that matched and the
 // amount filled.
@@ -596,19 +710,24 @@ type OrderFillEventV1 struct {
 	//	*OrderFillEventV1_Order
 	//	*OrderFillEventV1_LiquidationOrder
 	TakerOrder isOrderFillEventV1_TakerOrder `protobuf_oneof:"taker_order"`
-	FillAmount uint64                        `protobuf:"varint,3,opt,name=fill_amount,json=fillAmount,proto3" json:"fill_amount,omitempty"`
+	// Fill amount in base quantums.
+	FillAmount uint64 `protobuf:"varint,3,opt,name=fill_amount,json=fillAmount,proto3" json:"fill_amount,omitempty"`
 	// Maker fee in USDC quantums.
 	MakerFee int64 `protobuf:"zigzag64,5,opt,name=maker_fee,json=makerFee,proto3" json:"maker_fee,omitempty"`
 	// Taker fee in USDC quantums. If the taker order is a liquidation, then this
 	// represents the special liquidation fee, not the standard taker fee.
 	TakerFee int64 `protobuf:"zigzag64,6,opt,name=taker_fee,json=takerFee,proto3" json:"taker_fee,omitempty"`
+	// Total filled of the maker order in base quantums.
+	TotalFilledMaker uint64 `protobuf:"varint,7,opt,name=total_filled_maker,json=totalFilledMaker,proto3" json:"total_filled_maker,omitempty"`
+	// Total filled of the taker order in base quantums.
+	TotalFilledTaker uint64 `protobuf:"varint,8,opt,name=total_filled_taker,json=totalFilledTaker,proto3" json:"total_filled_taker,omitempty"`
 }
 
 func (m *OrderFillEventV1) Reset()         { *m = OrderFillEventV1{} }
 func (m *OrderFillEventV1) String() string { return proto.CompactTextString(m) }
 func (*OrderFillEventV1) ProtoMessage()    {}
 func (*OrderFillEventV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{8}
+	return fileDescriptor_6331dfb59c6fd2bb, []int{9}
 }
 func (m *OrderFillEventV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -702,6 +821,20 @@ func (m *OrderFillEventV1) GetTakerFee() int64 {
 	return 0
 }
 
+func (m *OrderFillEventV1) GetTotalFilledMaker() uint64 {
+	if m != nil {
+		return m.TotalFilledMaker
+	}
+	return 0
+}
+
+func (m *OrderFillEventV1) GetTotalFilledTaker() uint64 {
+	if m != nil {
+		return m.TotalFilledTaker
+	}
+	return 0
+}
+
 // XXX_OneofWrappers is for the internal use of the proto package.
 func (*OrderFillEventV1) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
@@ -736,7 +869,7 @@ func (m *LiquidationOrderV1) Reset()         { *m = LiquidationOrderV1{} }
 func (m *LiquidationOrderV1) String() string { return proto.CompactTextString(m) }
 func (*LiquidationOrderV1) ProtoMessage()    {}
 func (*LiquidationOrderV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{9}
+	return fileDescriptor_6331dfb59c6fd2bb, []int{10}
 }
 func (m *LiquidationOrderV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -825,7 +958,7 @@ func (m *SubaccountUpdateEventV1) Reset()         { *m = SubaccountUpdateEventV1
 func (m *SubaccountUpdateEventV1) String() string { return proto.CompactTextString(m) }
 func (*SubaccountUpdateEventV1) ProtoMessage()    {}
 func (*SubaccountUpdateEventV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{10}
+	return fileDescriptor_6331dfb59c6fd2bb, []int{11}
 }
 func (m *SubaccountUpdateEventV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -876,16 +1009,19 @@ func (m *SubaccountUpdateEventV1) GetUpdatedAssetPositions() []*v1.IndexerAssetP
 }
 
 // StatefulOrderEvent message contains information about a change to a stateful
-// order. Currently, this is either the placement, cancelation, or expiration of
-// a stateful order.
+// order. Currently, this is either the placement of a long-term order, the
+// placement or triggering of a conditional order, or the removal of a
+// stateful order.
 type StatefulOrderEventV1 struct {
 	// The type of event that this StatefulOrderEvent contains.
 	//
 	// Types that are valid to be assigned to Event:
 	//
 	//	*StatefulOrderEventV1_OrderPlace
-	//	*StatefulOrderEventV1_OrderCancel
-	//	*StatefulOrderEventV1_OrderExpiration
+	//	*StatefulOrderEventV1_OrderRemoval
+	//	*StatefulOrderEventV1_ConditionalOrderPlacement
+	//	*StatefulOrderEventV1_ConditionalOrderTriggered
+	//	*StatefulOrderEventV1_LongTermOrderPlacement
 	Event isStatefulOrderEventV1_Event `protobuf_oneof:"event"`
 }
 
@@ -893,7 +1029,7 @@ func (m *StatefulOrderEventV1) Reset()         { *m = StatefulOrderEventV1{} }
 func (m *StatefulOrderEventV1) String() string { return proto.CompactTextString(m) }
 func (*StatefulOrderEventV1) ProtoMessage()    {}
 func (*StatefulOrderEventV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{11}
+	return fileDescriptor_6331dfb59c6fd2bb, []int{12}
 }
 func (m *StatefulOrderEventV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -931,16 +1067,24 @@ type isStatefulOrderEventV1_Event interface {
 type StatefulOrderEventV1_OrderPlace struct {
 	OrderPlace *StatefulOrderEventV1_StatefulOrderPlacementV1 `protobuf:"bytes,1,opt,name=order_place,json=orderPlace,proto3,oneof" json:"order_place,omitempty"`
 }
-type StatefulOrderEventV1_OrderCancel struct {
-	OrderCancel *StatefulOrderEventV1_StatefulOrderCancelationV1 `protobuf:"bytes,2,opt,name=order_cancel,json=orderCancel,proto3,oneof" json:"order_cancel,omitempty"`
+type StatefulOrderEventV1_OrderRemoval struct {
+	OrderRemoval *StatefulOrderEventV1_StatefulOrderRemovalV1 `protobuf:"bytes,4,opt,name=order_removal,json=orderRemoval,proto3,oneof" json:"order_removal,omitempty"`
 }
-type StatefulOrderEventV1_OrderExpiration struct {
-	OrderExpiration *StatefulOrderEventV1_StatefulOrderExpirationV1 `protobuf:"bytes,3,opt,name=order_expiration,json=orderExpiration,proto3,oneof" json:"order_expiration,omitempty"`
+type StatefulOrderEventV1_ConditionalOrderPlacement struct {
+	ConditionalOrderPlacement *StatefulOrderEventV1_ConditionalOrderPlacementV1 `protobuf:"bytes,5,opt,name=conditional_order_placement,json=conditionalOrderPlacement,proto3,oneof" json:"conditional_order_placement,omitempty"`
+}
+type StatefulOrderEventV1_ConditionalOrderTriggered struct {
+	ConditionalOrderTriggered *StatefulOrderEventV1_ConditionalOrderTriggeredV1 `protobuf:"bytes,6,opt,name=conditional_order_triggered,json=conditionalOrderTriggered,proto3,oneof" json:"conditional_order_triggered,omitempty"`
+}
+type StatefulOrderEventV1_LongTermOrderPlacement struct {
+	LongTermOrderPlacement *StatefulOrderEventV1_LongTermOrderPlacementV1 `protobuf:"bytes,7,opt,name=long_term_order_placement,json=longTermOrderPlacement,proto3,oneof" json:"long_term_order_placement,omitempty"`
 }
 
-func (*StatefulOrderEventV1_OrderPlace) isStatefulOrderEventV1_Event()      {}
-func (*StatefulOrderEventV1_OrderCancel) isStatefulOrderEventV1_Event()     {}
-func (*StatefulOrderEventV1_OrderExpiration) isStatefulOrderEventV1_Event() {}
+func (*StatefulOrderEventV1_OrderPlace) isStatefulOrderEventV1_Event()                {}
+func (*StatefulOrderEventV1_OrderRemoval) isStatefulOrderEventV1_Event()              {}
+func (*StatefulOrderEventV1_ConditionalOrderPlacement) isStatefulOrderEventV1_Event() {}
+func (*StatefulOrderEventV1_ConditionalOrderTriggered) isStatefulOrderEventV1_Event() {}
+func (*StatefulOrderEventV1_LongTermOrderPlacement) isStatefulOrderEventV1_Event()    {}
 
 func (m *StatefulOrderEventV1) GetEvent() isStatefulOrderEventV1_Event {
 	if m != nil {
@@ -956,16 +1100,30 @@ func (m *StatefulOrderEventV1) GetOrderPlace() *StatefulOrderEventV1_StatefulOrd
 	return nil
 }
 
-func (m *StatefulOrderEventV1) GetOrderCancel() *StatefulOrderEventV1_StatefulOrderCancelationV1 {
-	if x, ok := m.GetEvent().(*StatefulOrderEventV1_OrderCancel); ok {
-		return x.OrderCancel
+func (m *StatefulOrderEventV1) GetOrderRemoval() *StatefulOrderEventV1_StatefulOrderRemovalV1 {
+	if x, ok := m.GetEvent().(*StatefulOrderEventV1_OrderRemoval); ok {
+		return x.OrderRemoval
 	}
 	return nil
 }
 
-func (m *StatefulOrderEventV1) GetOrderExpiration() *StatefulOrderEventV1_StatefulOrderExpirationV1 {
-	if x, ok := m.GetEvent().(*StatefulOrderEventV1_OrderExpiration); ok {
-		return x.OrderExpiration
+func (m *StatefulOrderEventV1) GetConditionalOrderPlacement() *StatefulOrderEventV1_ConditionalOrderPlacementV1 {
+	if x, ok := m.GetEvent().(*StatefulOrderEventV1_ConditionalOrderPlacement); ok {
+		return x.ConditionalOrderPlacement
+	}
+	return nil
+}
+
+func (m *StatefulOrderEventV1) GetConditionalOrderTriggered() *StatefulOrderEventV1_ConditionalOrderTriggeredV1 {
+	if x, ok := m.GetEvent().(*StatefulOrderEventV1_ConditionalOrderTriggered); ok {
+		return x.ConditionalOrderTriggered
+	}
+	return nil
+}
+
+func (m *StatefulOrderEventV1) GetLongTermOrderPlacement() *StatefulOrderEventV1_LongTermOrderPlacementV1 {
+	if x, ok := m.GetEvent().(*StatefulOrderEventV1_LongTermOrderPlacement); ok {
+		return x.LongTermOrderPlacement
 	}
 	return nil
 }
@@ -974,8 +1132,10 @@ func (m *StatefulOrderEventV1) GetOrderExpiration() *StatefulOrderEventV1_Statef
 func (*StatefulOrderEventV1) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
 		(*StatefulOrderEventV1_OrderPlace)(nil),
-		(*StatefulOrderEventV1_OrderCancel)(nil),
-		(*StatefulOrderEventV1_OrderExpiration)(nil),
+		(*StatefulOrderEventV1_OrderRemoval)(nil),
+		(*StatefulOrderEventV1_ConditionalOrderPlacement)(nil),
+		(*StatefulOrderEventV1_ConditionalOrderTriggered)(nil),
+		(*StatefulOrderEventV1_LongTermOrderPlacement)(nil),
 	}
 }
 
@@ -992,7 +1152,7 @@ func (m *StatefulOrderEventV1_StatefulOrderPlacementV1) String() string {
 }
 func (*StatefulOrderEventV1_StatefulOrderPlacementV1) ProtoMessage() {}
 func (*StatefulOrderEventV1_StatefulOrderPlacementV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{11, 0}
+	return fileDescriptor_6331dfb59c6fd2bb, []int{12, 0}
 }
 func (m *StatefulOrderEventV1_StatefulOrderPlacementV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1028,28 +1188,29 @@ func (m *StatefulOrderEventV1_StatefulOrderPlacementV1) GetOrder() *v1.IndexerOr
 	return nil
 }
 
-// A stateful order cancelation contains the id of an order that was already
-// placed and is now cancelled.
-type StatefulOrderEventV1_StatefulOrderCancelationV1 struct {
-	CanceledOrderId *v1.IndexerOrderId `protobuf:"bytes,1,opt,name=canceled_order_id,json=canceledOrderId,proto3" json:"canceled_order_id,omitempty"`
+// A stateful order removal contains the id of an order that was already
+// placed and is now removed and the reason for the removal.
+type StatefulOrderEventV1_StatefulOrderRemovalV1 struct {
+	RemovedOrderId *v1.IndexerOrderId        `protobuf:"bytes,1,opt,name=removed_order_id,json=removedOrderId,proto3" json:"removed_order_id,omitempty"`
+	Reason         shared.OrderRemovalReason `protobuf:"varint,2,opt,name=reason,proto3,enum=dydxprotocol.indexer.shared.OrderRemovalReason" json:"reason,omitempty"`
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Reset() {
-	*m = StatefulOrderEventV1_StatefulOrderCancelationV1{}
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) Reset() {
+	*m = StatefulOrderEventV1_StatefulOrderRemovalV1{}
 }
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) String() string {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) String() string {
 	return proto.CompactTextString(m)
 }
-func (*StatefulOrderEventV1_StatefulOrderCancelationV1) ProtoMessage() {}
-func (*StatefulOrderEventV1_StatefulOrderCancelationV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{11, 1}
+func (*StatefulOrderEventV1_StatefulOrderRemovalV1) ProtoMessage() {}
+func (*StatefulOrderEventV1_StatefulOrderRemovalV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{12, 1}
 }
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) XXX_Unmarshal(b []byte) error {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StatefulOrderEventV1_StatefulOrderCancelationV1.Marshal(b, m, deterministic)
+		return xxx_messageInfo_StatefulOrderEventV1_StatefulOrderRemovalV1.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -1059,47 +1220,54 @@ func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) XXX_Marshal(b []byte, 
 		return b[:n], nil
 	}
 }
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StatefulOrderEventV1_StatefulOrderCancelationV1.Merge(m, src)
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StatefulOrderEventV1_StatefulOrderRemovalV1.Merge(m, src)
 }
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) XXX_Size() int {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) XXX_Size() int {
 	return m.Size()
 }
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) XXX_DiscardUnknown() {
-	xxx_messageInfo_StatefulOrderEventV1_StatefulOrderCancelationV1.DiscardUnknown(m)
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_StatefulOrderEventV1_StatefulOrderRemovalV1.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StatefulOrderEventV1_StatefulOrderCancelationV1 proto.InternalMessageInfo
+var xxx_messageInfo_StatefulOrderEventV1_StatefulOrderRemovalV1 proto.InternalMessageInfo
 
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) GetCanceledOrderId() *v1.IndexerOrderId {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) GetRemovedOrderId() *v1.IndexerOrderId {
 	if m != nil {
-		return m.CanceledOrderId
+		return m.RemovedOrderId
 	}
 	return nil
 }
 
-// A stateful order expiration contains the id of an order that was already
-// placed and is now expired.
-type StatefulOrderEventV1_StatefulOrderExpirationV1 struct {
-	ExpiredOrderId *v1.IndexerOrderId `protobuf:"bytes,1,opt,name=expired_order_id,json=expiredOrderId,proto3" json:"expired_order_id,omitempty"`
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) GetReason() shared.OrderRemovalReason {
+	if m != nil {
+		return m.Reason
+	}
+	return shared.OrderRemovalReason_ORDER_REMOVAL_REASON_UNSPECIFIED
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) Reset() {
-	*m = StatefulOrderEventV1_StatefulOrderExpirationV1{}
+// A conditional order placement contains an order. The order is newly-placed
+// and untriggered when this event is emitted.
+type StatefulOrderEventV1_ConditionalOrderPlacementV1 struct {
+	Order *v1.IndexerOrder `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
 }
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) String() string {
+
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) Reset() {
+	*m = StatefulOrderEventV1_ConditionalOrderPlacementV1{}
+}
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) String() string {
 	return proto.CompactTextString(m)
 }
-func (*StatefulOrderEventV1_StatefulOrderExpirationV1) ProtoMessage() {}
-func (*StatefulOrderEventV1_StatefulOrderExpirationV1) Descriptor() ([]byte, []int) {
-	return fileDescriptor_6331dfb59c6fd2bb, []int{11, 2}
+func (*StatefulOrderEventV1_ConditionalOrderPlacementV1) ProtoMessage() {}
+func (*StatefulOrderEventV1_ConditionalOrderPlacementV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{12, 2}
 }
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) XXX_Unmarshal(b []byte) error {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StatefulOrderEventV1_StatefulOrderExpirationV1.Marshal(b, m, deterministic)
+		return xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderPlacementV1.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -1109,23 +1277,625 @@ func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) XXX_Marshal(b []byte, d
 		return b[:n], nil
 	}
 }
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StatefulOrderEventV1_StatefulOrderExpirationV1.Merge(m, src)
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderPlacementV1.Merge(m, src)
 }
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) XXX_Size() int {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) XXX_Size() int {
 	return m.Size()
 }
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) XXX_DiscardUnknown() {
-	xxx_messageInfo_StatefulOrderEventV1_StatefulOrderExpirationV1.DiscardUnknown(m)
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderPlacementV1.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StatefulOrderEventV1_StatefulOrderExpirationV1 proto.InternalMessageInfo
+var xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderPlacementV1 proto.InternalMessageInfo
 
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) GetExpiredOrderId() *v1.IndexerOrderId {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) GetOrder() *v1.IndexerOrder {
 	if m != nil {
-		return m.ExpiredOrderId
+		return m.Order
 	}
 	return nil
+}
+
+// A conditional order trigger event contains an order id and is emitted when
+// an order is triggered.
+type StatefulOrderEventV1_ConditionalOrderTriggeredV1 struct {
+	TriggeredOrderId *v1.IndexerOrderId `protobuf:"bytes,1,opt,name=triggered_order_id,json=triggeredOrderId,proto3" json:"triggered_order_id,omitempty"`
+}
+
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) Reset() {
+	*m = StatefulOrderEventV1_ConditionalOrderTriggeredV1{}
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) String() string {
+	return proto.CompactTextString(m)
+}
+func (*StatefulOrderEventV1_ConditionalOrderTriggeredV1) ProtoMessage() {}
+func (*StatefulOrderEventV1_ConditionalOrderTriggeredV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{12, 3}
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderTriggeredV1.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderTriggeredV1.Merge(m, src)
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) XXX_Size() int {
+	return m.Size()
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderTriggeredV1.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StatefulOrderEventV1_ConditionalOrderTriggeredV1 proto.InternalMessageInfo
+
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) GetTriggeredOrderId() *v1.IndexerOrderId {
+	if m != nil {
+		return m.TriggeredOrderId
+	}
+	return nil
+}
+
+// A long term order placement contains an order.
+type StatefulOrderEventV1_LongTermOrderPlacementV1 struct {
+	Order *v1.IndexerOrder `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
+}
+
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) Reset() {
+	*m = StatefulOrderEventV1_LongTermOrderPlacementV1{}
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) String() string {
+	return proto.CompactTextString(m)
+}
+func (*StatefulOrderEventV1_LongTermOrderPlacementV1) ProtoMessage() {}
+func (*StatefulOrderEventV1_LongTermOrderPlacementV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{12, 4}
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StatefulOrderEventV1_LongTermOrderPlacementV1.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StatefulOrderEventV1_LongTermOrderPlacementV1.Merge(m, src)
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) XXX_Size() int {
+	return m.Size()
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_StatefulOrderEventV1_LongTermOrderPlacementV1.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StatefulOrderEventV1_LongTermOrderPlacementV1 proto.InternalMessageInfo
+
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) GetOrder() *v1.IndexerOrder {
+	if m != nil {
+		return m.Order
+	}
+	return nil
+}
+
+// AssetCreateEventV1 message contains all the information about an new Asset on
+// the v4 chain.
+type AssetCreateEventV1 struct {
+	// Unique, sequentially-generated.
+	Id uint32 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The human readable symbol of the `Asset` (e.g. `USDC`, `ATOM`).
+	// Must be uppercase, unique and correspond to the canonical symbol of the
+	// full coin.
+	Symbol string `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	// `true` if this `Asset` has a valid `MarketId` value.
+	HasMarket bool `protobuf:"varint,3,opt,name=has_market,json=hasMarket,proto3" json:"has_market,omitempty"`
+	// The `Id` of the `Market` associated with this `Asset`. It acts as the
+	// oracle price for the purposes of calculating collateral
+	// and margin requirements.
+	MarketId uint32 `protobuf:"varint,4,opt,name=market_id,json=marketId,proto3" json:"market_id,omitempty"`
+	// The exponent for converting an atomic amount (1 'quantum')
+	// to a full coin. For example, if `atomic_resolution = -8`
+	// then an `asset_position` with `base_quantums = 1e8` is equivalent to
+	// a position size of one full coin.
+	AtomicResolution int32 `protobuf:"zigzag32,5,opt,name=atomic_resolution,json=atomicResolution,proto3" json:"atomic_resolution,omitempty"`
+}
+
+func (m *AssetCreateEventV1) Reset()         { *m = AssetCreateEventV1{} }
+func (m *AssetCreateEventV1) String() string { return proto.CompactTextString(m) }
+func (*AssetCreateEventV1) ProtoMessage()    {}
+func (*AssetCreateEventV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{13}
+}
+func (m *AssetCreateEventV1) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AssetCreateEventV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AssetCreateEventV1.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AssetCreateEventV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AssetCreateEventV1.Merge(m, src)
+}
+func (m *AssetCreateEventV1) XXX_Size() int {
+	return m.Size()
+}
+func (m *AssetCreateEventV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_AssetCreateEventV1.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AssetCreateEventV1 proto.InternalMessageInfo
+
+func (m *AssetCreateEventV1) GetId() uint32 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *AssetCreateEventV1) GetSymbol() string {
+	if m != nil {
+		return m.Symbol
+	}
+	return ""
+}
+
+func (m *AssetCreateEventV1) GetHasMarket() bool {
+	if m != nil {
+		return m.HasMarket
+	}
+	return false
+}
+
+func (m *AssetCreateEventV1) GetMarketId() uint32 {
+	if m != nil {
+		return m.MarketId
+	}
+	return 0
+}
+
+func (m *AssetCreateEventV1) GetAtomicResolution() int32 {
+	if m != nil {
+		return m.AtomicResolution
+	}
+	return 0
+}
+
+// PerpetualMarketCreateEventV1 message contains all the information about a
+// new Perpetual Market on the v4 chain.
+type PerpetualMarketCreateEventV1 struct {
+	// Unique Perpetual id.
+	// Defined in perpetuals.perpetual
+	Id uint32 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Unique clob pair Id associated with this perpetual market
+	// Defined in clob.clob_pair
+	ClobPairId uint32 `protobuf:"varint,2,opt,name=clob_pair_id,json=clobPairId,proto3" json:"clob_pair_id,omitempty"`
+	// The name of the `Perpetual` (e.g. `BTC-USD`).
+	// Defined in perpetuals.perpetual
+	Ticker string `protobuf:"bytes,3,opt,name=ticker,proto3" json:"ticker,omitempty"`
+	// Unique id of market param associated with this perpetual market.
+	// Defined in perpetuals.perpetual
+	MarketId uint32 `protobuf:"varint,4,opt,name=market_id,json=marketId,proto3" json:"market_id,omitempty"`
+	// Status of the CLOB
+	Status v1.ClobPairStatus `protobuf:"varint,5,opt,name=status,proto3,enum=dydxprotocol.indexer.protocol.v1.ClobPairStatus" json:"status,omitempty"`
+	// `10^Exponent` gives the number of QuoteQuantums traded per BaseQuantum
+	// per Subtick.
+	// Defined in clob.clob_pair
+	QuantumConversionExponent int32 `protobuf:"zigzag32,6,opt,name=quantum_conversion_exponent,json=quantumConversionExponent,proto3" json:"quantum_conversion_exponent,omitempty"`
+	// The exponent for converting an atomic amount (`size = 1`)
+	// to a full coin. For example, if `AtomicResolution = -8`
+	// then a `PerpetualPosition` with `size = 1e8` is equivalent to
+	// a position size of one full coin.
+	// Defined in perpetuals.perpetual
+	AtomicResolution int32 `protobuf:"zigzag32,7,opt,name=atomic_resolution,json=atomicResolution,proto3" json:"atomic_resolution,omitempty"`
+	// Defines the tick size of the orderbook by defining how many subticks
+	// are in one tick. That is, the subticks of any valid order must be a
+	// multiple of this value. Generally this value should start `>= 100`to
+	// allow room for decreasing it.
+	// Defined in clob.clob_pair
+	SubticksPerTick uint32 `protobuf:"varint,8,opt,name=subticks_per_tick,json=subticksPerTick,proto3" json:"subticks_per_tick,omitempty"`
+	// Minimum increment in the size of orders on the CLOB, in base quantums.
+	// Defined in clob.clob_pair
+	StepBaseQuantums uint64 `protobuf:"varint,9,opt,name=step_base_quantums,json=stepBaseQuantums,proto3" json:"step_base_quantums,omitempty"`
+	// The liquidity_tier that this perpetual is associated with.
+	// Defined in perpetuals.perpetual
+	LiquidityTier uint32 `protobuf:"varint,10,opt,name=liquidity_tier,json=liquidityTier,proto3" json:"liquidity_tier,omitempty"`
+}
+
+func (m *PerpetualMarketCreateEventV1) Reset()         { *m = PerpetualMarketCreateEventV1{} }
+func (m *PerpetualMarketCreateEventV1) String() string { return proto.CompactTextString(m) }
+func (*PerpetualMarketCreateEventV1) ProtoMessage()    {}
+func (*PerpetualMarketCreateEventV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{14}
+}
+func (m *PerpetualMarketCreateEventV1) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PerpetualMarketCreateEventV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PerpetualMarketCreateEventV1.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PerpetualMarketCreateEventV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PerpetualMarketCreateEventV1.Merge(m, src)
+}
+func (m *PerpetualMarketCreateEventV1) XXX_Size() int {
+	return m.Size()
+}
+func (m *PerpetualMarketCreateEventV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_PerpetualMarketCreateEventV1.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PerpetualMarketCreateEventV1 proto.InternalMessageInfo
+
+func (m *PerpetualMarketCreateEventV1) GetId() uint32 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *PerpetualMarketCreateEventV1) GetClobPairId() uint32 {
+	if m != nil {
+		return m.ClobPairId
+	}
+	return 0
+}
+
+func (m *PerpetualMarketCreateEventV1) GetTicker() string {
+	if m != nil {
+		return m.Ticker
+	}
+	return ""
+}
+
+func (m *PerpetualMarketCreateEventV1) GetMarketId() uint32 {
+	if m != nil {
+		return m.MarketId
+	}
+	return 0
+}
+
+func (m *PerpetualMarketCreateEventV1) GetStatus() v1.ClobPairStatus {
+	if m != nil {
+		return m.Status
+	}
+	return v1.ClobPairStatus_CLOB_PAIR_STATUS_UNSPECIFIED
+}
+
+func (m *PerpetualMarketCreateEventV1) GetQuantumConversionExponent() int32 {
+	if m != nil {
+		return m.QuantumConversionExponent
+	}
+	return 0
+}
+
+func (m *PerpetualMarketCreateEventV1) GetAtomicResolution() int32 {
+	if m != nil {
+		return m.AtomicResolution
+	}
+	return 0
+}
+
+func (m *PerpetualMarketCreateEventV1) GetSubticksPerTick() uint32 {
+	if m != nil {
+		return m.SubticksPerTick
+	}
+	return 0
+}
+
+func (m *PerpetualMarketCreateEventV1) GetStepBaseQuantums() uint64 {
+	if m != nil {
+		return m.StepBaseQuantums
+	}
+	return 0
+}
+
+func (m *PerpetualMarketCreateEventV1) GetLiquidityTier() uint32 {
+	if m != nil {
+		return m.LiquidityTier
+	}
+	return 0
+}
+
+// LiquidityTierUpsertEventV1 message contains all the information to
+// create/update a Liquidity Tier on the v4 chain.
+type LiquidityTierUpsertEventV1 struct {
+	// Unique id.
+	Id uint32 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The name of the tier purely for mnemonic purposes, e.g. "Gold".
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// The margin fraction needed to open a position.
+	// In parts-per-million.
+	InitialMarginPpm uint32 `protobuf:"varint,3,opt,name=initial_margin_ppm,json=initialMarginPpm,proto3" json:"initial_margin_ppm,omitempty"`
+	// The fraction of the initial-margin that the maintenance-margin is,
+	// e.g. 50%. In parts-per-million.
+	MaintenanceFractionPpm uint32 `protobuf:"varint,4,opt,name=maintenance_fraction_ppm,json=maintenanceFractionPpm,proto3" json:"maintenance_fraction_ppm,omitempty"`
+	// The maximum position size at which the margin requirements are
+	// not increased over the default values. Above this position size,
+	// the margin requirements increase at a rate of sqrt(size).
+	BasePositionNotional uint64 `protobuf:"varint,5,opt,name=base_position_notional,json=basePositionNotional,proto3" json:"base_position_notional,omitempty"`
+}
+
+func (m *LiquidityTierUpsertEventV1) Reset()         { *m = LiquidityTierUpsertEventV1{} }
+func (m *LiquidityTierUpsertEventV1) String() string { return proto.CompactTextString(m) }
+func (*LiquidityTierUpsertEventV1) ProtoMessage()    {}
+func (*LiquidityTierUpsertEventV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{15}
+}
+func (m *LiquidityTierUpsertEventV1) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LiquidityTierUpsertEventV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LiquidityTierUpsertEventV1.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *LiquidityTierUpsertEventV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LiquidityTierUpsertEventV1.Merge(m, src)
+}
+func (m *LiquidityTierUpsertEventV1) XXX_Size() int {
+	return m.Size()
+}
+func (m *LiquidityTierUpsertEventV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_LiquidityTierUpsertEventV1.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LiquidityTierUpsertEventV1 proto.InternalMessageInfo
+
+func (m *LiquidityTierUpsertEventV1) GetId() uint32 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *LiquidityTierUpsertEventV1) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
+func (m *LiquidityTierUpsertEventV1) GetInitialMarginPpm() uint32 {
+	if m != nil {
+		return m.InitialMarginPpm
+	}
+	return 0
+}
+
+func (m *LiquidityTierUpsertEventV1) GetMaintenanceFractionPpm() uint32 {
+	if m != nil {
+		return m.MaintenanceFractionPpm
+	}
+	return 0
+}
+
+func (m *LiquidityTierUpsertEventV1) GetBasePositionNotional() uint64 {
+	if m != nil {
+		return m.BasePositionNotional
+	}
+	return 0
+}
+
+// UpdateClobPairEventV1 message contains all the information about an update to
+// a clob pair on the v4 chain.
+type UpdateClobPairEventV1 struct {
+	// Unique clob pair Id associated with this perpetual market
+	// Defined in clob.clob_pair
+	ClobPairId uint32 `protobuf:"varint,1,opt,name=clob_pair_id,json=clobPairId,proto3" json:"clob_pair_id,omitempty"`
+	// Status of the CLOB
+	Status v1.ClobPairStatus `protobuf:"varint,2,opt,name=status,proto3,enum=dydxprotocol.indexer.protocol.v1.ClobPairStatus" json:"status,omitempty"`
+	// `10^Exponent` gives the number of QuoteQuantums traded per BaseQuantum
+	// per Subtick.
+	// Defined in clob.clob_pair
+	QuantumConversionExponent int32 `protobuf:"zigzag32,3,opt,name=quantum_conversion_exponent,json=quantumConversionExponent,proto3" json:"quantum_conversion_exponent,omitempty"`
+	// Defines the tick size of the orderbook by defining how many subticks
+	// are in one tick. That is, the subticks of any valid order must be a
+	// multiple of this value. Generally this value should start `>= 100`to
+	// allow room for decreasing it.
+	// Defined in clob.clob_pair
+	SubticksPerTick uint32 `protobuf:"varint,4,opt,name=subticks_per_tick,json=subticksPerTick,proto3" json:"subticks_per_tick,omitempty"`
+	// Minimum increment in the size of orders on the CLOB, in base quantums.
+	// Defined in clob.clob_pair
+	StepBaseQuantums uint64 `protobuf:"varint,5,opt,name=step_base_quantums,json=stepBaseQuantums,proto3" json:"step_base_quantums,omitempty"`
+}
+
+func (m *UpdateClobPairEventV1) Reset()         { *m = UpdateClobPairEventV1{} }
+func (m *UpdateClobPairEventV1) String() string { return proto.CompactTextString(m) }
+func (*UpdateClobPairEventV1) ProtoMessage()    {}
+func (*UpdateClobPairEventV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{16}
+}
+func (m *UpdateClobPairEventV1) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *UpdateClobPairEventV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_UpdateClobPairEventV1.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *UpdateClobPairEventV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_UpdateClobPairEventV1.Merge(m, src)
+}
+func (m *UpdateClobPairEventV1) XXX_Size() int {
+	return m.Size()
+}
+func (m *UpdateClobPairEventV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_UpdateClobPairEventV1.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_UpdateClobPairEventV1 proto.InternalMessageInfo
+
+func (m *UpdateClobPairEventV1) GetClobPairId() uint32 {
+	if m != nil {
+		return m.ClobPairId
+	}
+	return 0
+}
+
+func (m *UpdateClobPairEventV1) GetStatus() v1.ClobPairStatus {
+	if m != nil {
+		return m.Status
+	}
+	return v1.ClobPairStatus_CLOB_PAIR_STATUS_UNSPECIFIED
+}
+
+func (m *UpdateClobPairEventV1) GetQuantumConversionExponent() int32 {
+	if m != nil {
+		return m.QuantumConversionExponent
+	}
+	return 0
+}
+
+func (m *UpdateClobPairEventV1) GetSubticksPerTick() uint32 {
+	if m != nil {
+		return m.SubticksPerTick
+	}
+	return 0
+}
+
+func (m *UpdateClobPairEventV1) GetStepBaseQuantums() uint64 {
+	if m != nil {
+		return m.StepBaseQuantums
+	}
+	return 0
+}
+
+// UpdatePerpetualEventV1 message contains all the information about an update
+// to a perpetual on the v4 chain.
+type UpdatePerpetualEventV1 struct {
+	// Unique Perpetual id.
+	// Defined in perpetuals.perpetual
+	Id uint32 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The name of the `Perpetual` (e.g. `BTC-USD`).
+	// Defined in perpetuals.perpetual
+	Ticker string `protobuf:"bytes,2,opt,name=ticker,proto3" json:"ticker,omitempty"`
+	// Unique id of market param associated with this perpetual market.
+	// Defined in perpetuals.perpetual
+	MarketId uint32 `protobuf:"varint,3,opt,name=market_id,json=marketId,proto3" json:"market_id,omitempty"`
+	// The exponent for converting an atomic amount (`size = 1`)
+	// to a full coin. For example, if `AtomicResolution = -8`
+	// then a `PerpetualPosition` with `size = 1e8` is equivalent to
+	// a position size of one full coin.
+	// Defined in perpetuals.perpetual
+	AtomicResolution int32 `protobuf:"zigzag32,4,opt,name=atomic_resolution,json=atomicResolution,proto3" json:"atomic_resolution,omitempty"`
+	// The liquidity_tier that this perpetual is associated with.
+	// Defined in perpetuals.perpetual
+	LiquidityTier uint32 `protobuf:"varint,5,opt,name=liquidity_tier,json=liquidityTier,proto3" json:"liquidity_tier,omitempty"`
+}
+
+func (m *UpdatePerpetualEventV1) Reset()         { *m = UpdatePerpetualEventV1{} }
+func (m *UpdatePerpetualEventV1) String() string { return proto.CompactTextString(m) }
+func (*UpdatePerpetualEventV1) ProtoMessage()    {}
+func (*UpdatePerpetualEventV1) Descriptor() ([]byte, []int) {
+	return fileDescriptor_6331dfb59c6fd2bb, []int{17}
+}
+func (m *UpdatePerpetualEventV1) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *UpdatePerpetualEventV1) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_UpdatePerpetualEventV1.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *UpdatePerpetualEventV1) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_UpdatePerpetualEventV1.Merge(m, src)
+}
+func (m *UpdatePerpetualEventV1) XXX_Size() int {
+	return m.Size()
+}
+func (m *UpdatePerpetualEventV1) XXX_DiscardUnknown() {
+	xxx_messageInfo_UpdatePerpetualEventV1.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_UpdatePerpetualEventV1 proto.InternalMessageInfo
+
+func (m *UpdatePerpetualEventV1) GetId() uint32 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *UpdatePerpetualEventV1) GetTicker() string {
+	if m != nil {
+		return m.Ticker
+	}
+	return ""
+}
+
+func (m *UpdatePerpetualEventV1) GetMarketId() uint32 {
+	if m != nil {
+		return m.MarketId
+	}
+	return 0
+}
+
+func (m *UpdatePerpetualEventV1) GetAtomicResolution() int32 {
+	if m != nil {
+		return m.AtomicResolution
+	}
+	return 0
+}
+
+func (m *UpdatePerpetualEventV1) GetLiquidityTier() uint32 {
+	if m != nil {
+		return m.LiquidityTier
+	}
+	return 0
 }
 
 func init() {
@@ -1137,14 +1907,22 @@ func init() {
 	proto.RegisterType((*MarketBaseEventV1)(nil), "dydxprotocol.indexer.events.MarketBaseEventV1")
 	proto.RegisterType((*MarketCreateEventV1)(nil), "dydxprotocol.indexer.events.MarketCreateEventV1")
 	proto.RegisterType((*MarketModifyEventV1)(nil), "dydxprotocol.indexer.events.MarketModifyEventV1")
+	proto.RegisterType((*SourceOfFunds)(nil), "dydxprotocol.indexer.events.SourceOfFunds")
 	proto.RegisterType((*TransferEventV1)(nil), "dydxprotocol.indexer.events.TransferEventV1")
 	proto.RegisterType((*OrderFillEventV1)(nil), "dydxprotocol.indexer.events.OrderFillEventV1")
 	proto.RegisterType((*LiquidationOrderV1)(nil), "dydxprotocol.indexer.events.LiquidationOrderV1")
 	proto.RegisterType((*SubaccountUpdateEventV1)(nil), "dydxprotocol.indexer.events.SubaccountUpdateEventV1")
 	proto.RegisterType((*StatefulOrderEventV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1")
 	proto.RegisterType((*StatefulOrderEventV1_StatefulOrderPlacementV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1.StatefulOrderPlacementV1")
-	proto.RegisterType((*StatefulOrderEventV1_StatefulOrderCancelationV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1.StatefulOrderCancelationV1")
-	proto.RegisterType((*StatefulOrderEventV1_StatefulOrderExpirationV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1.StatefulOrderExpirationV1")
+	proto.RegisterType((*StatefulOrderEventV1_StatefulOrderRemovalV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1.StatefulOrderRemovalV1")
+	proto.RegisterType((*StatefulOrderEventV1_ConditionalOrderPlacementV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1.ConditionalOrderPlacementV1")
+	proto.RegisterType((*StatefulOrderEventV1_ConditionalOrderTriggeredV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1.ConditionalOrderTriggeredV1")
+	proto.RegisterType((*StatefulOrderEventV1_LongTermOrderPlacementV1)(nil), "dydxprotocol.indexer.events.StatefulOrderEventV1.LongTermOrderPlacementV1")
+	proto.RegisterType((*AssetCreateEventV1)(nil), "dydxprotocol.indexer.events.AssetCreateEventV1")
+	proto.RegisterType((*PerpetualMarketCreateEventV1)(nil), "dydxprotocol.indexer.events.PerpetualMarketCreateEventV1")
+	proto.RegisterType((*LiquidityTierUpsertEventV1)(nil), "dydxprotocol.indexer.events.LiquidityTierUpsertEventV1")
+	proto.RegisterType((*UpdateClobPairEventV1)(nil), "dydxprotocol.indexer.events.UpdateClobPairEventV1")
+	proto.RegisterType((*UpdatePerpetualEventV1)(nil), "dydxprotocol.indexer.events.UpdatePerpetualEventV1")
 }
 
 func init() {
@@ -1152,85 +1930,127 @@ func init() {
 }
 
 var fileDescriptor_6331dfb59c6fd2bb = []byte{
-	// 1247 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x57, 0xcb, 0x6e, 0xdb, 0x46,
-	0x17, 0xd6, 0xd5, 0x71, 0x8e, 0xa4, 0x58, 0x9a, 0xd8, 0xbf, 0x15, 0x19, 0xbf, 0xac, 0x72, 0xa5,
-	0x5e, 0x20, 0x45, 0xee, 0x05, 0x68, 0x77, 0x96, 0x25, 0x35, 0x4c, 0x6d, 0x47, 0xa0, 0x6c, 0x27,
-	0x71, 0x8b, 0xb0, 0x14, 0x39, 0xb2, 0x07, 0xe6, 0x2d, 0xbc, 0x38, 0x96, 0x9f, 0xa0, 0xcb, 0x02,
-	0x7d, 0x89, 0x3e, 0x46, 0x81, 0x6e, 0xb2, 0x0c, 0xba, 0x2a, 0xba, 0x08, 0x8a, 0x64, 0xd1, 0x87,
-	0xe8, 0xa6, 0xe0, 0xcc, 0x90, 0x94, 0x62, 0x5b, 0x55, 0x63, 0xaf, 0xec, 0xf9, 0xce, 0x9c, 0xef,
-	0x3b, 0xf3, 0x71, 0xce, 0x21, 0x05, 0x75, 0x6d, 0xac, 0x9d, 0xd9, 0x8e, 0xe5, 0x59, 0xaa, 0xa5,
-	0x37, 0x89, 0xa9, 0xe1, 0x33, 0xec, 0x34, 0xf1, 0x29, 0x36, 0x3d, 0x97, 0xff, 0x69, 0xd0, 0x30,
-	0x5a, 0x9b, 0xdc, 0xd9, 0xe0, 0x3b, 0x1b, 0x6c, 0x4b, 0x65, 0xf9, 0xc8, 0x3a, 0xb2, 0x68, 0xb0,
-	0x19, 0xfc, 0xc7, 0x52, 0x2a, 0x1f, 0x5f, 0x4a, 0x1e, 0x01, 0xa7, 0xad, 0xa6, 0xaa, 0x5b, 0x43,
-	0xbe, 0xb9, 0xf5, 0xaf, 0x9b, 0x5d, 0x7f, 0xa8, 0xa8, 0xaa, 0xe5, 0x9b, 0x1e, 0x4b, 0x11, 0x7e,
-	0x49, 0xc2, 0x52, 0xcf, 0x37, 0x35, 0x62, 0x1e, 0xed, 0xdb, 0x9a, 0xe2, 0xe1, 0x83, 0x16, 0xfa,
-	0x00, 0xf2, 0x36, 0x76, 0x6c, 0xec, 0xf9, 0x8a, 0x2e, 0x13, 0xad, 0x9c, 0xac, 0x25, 0xeb, 0x05,
-	0x29, 0x17, 0x61, 0xa2, 0x86, 0x3e, 0x82, 0xd2, 0x88, 0x65, 0xc9, 0xa7, 0x8a, 0xee, 0x63, 0xd9,
-	0xb6, 0x8d, 0x72, 0xaa, 0x96, 0xac, 0x67, 0xa5, 0x25, 0x1e, 0x38, 0x08, 0xf0, 0xbe, 0x6d, 0xa0,
-	0x67, 0x50, 0x08, 0xf7, 0xd2, 0x92, 0xca, 0xe9, 0x5a, 0xb2, 0x9e, 0x6f, 0x7f, 0xf9, 0xf2, 0xf5,
-	0x7a, 0xe2, 0x8f, 0xd7, 0xeb, 0xad, 0x23, 0xe2, 0x1d, 0xfb, 0xc3, 0x86, 0x6a, 0x19, 0xcd, 0xa9,
-	0xfa, 0x4f, 0x3f, 0x6b, 0x6a, 0xde, 0xd8, 0xc6, 0x6e, 0x63, 0x80, 0x1d, 0xa2, 0xe8, 0xe4, 0x5c,
-	0x19, 0xea, 0x58, 0x34, 0x3d, 0x29, 0xcf, 0xf9, 0xc4, 0x80, 0x4e, 0xf8, 0x29, 0x05, 0x77, 0xf8,
-	0x11, 0xba, 0x81, 0x95, 0x07, 0x2d, 0xb4, 0x0d, 0xb7, 0x7c, 0x7a, 0x1a, 0xb7, 0x9c, 0xac, 0xa5,
-	0xeb, 0xb9, 0x8d, 0x4f, 0x1a, 0x33, 0xac, 0x6f, 0xbc, 0x63, 0x40, 0x3b, 0x13, 0x94, 0x26, 0x85,
-	0x14, 0xa8, 0x03, 0x99, 0xa0, 0x0e, 0x7a, 0xbe, 0x3b, 0x1b, 0xf7, 0xe7, 0xa1, 0xe2, 0x85, 0x34,
-	0xf6, 0xc6, 0x36, 0x96, 0x68, 0xb6, 0x60, 0x40, 0x26, 0x58, 0xa1, 0x65, 0x28, 0xee, 0x3d, 0xed,
-	0x77, 0xe5, 0xfd, 0xdd, 0x41, 0xbf, 0xbb, 0x25, 0xf6, 0xc4, 0x6e, 0xa7, 0x98, 0x40, 0xab, 0x70,
-	0x97, 0xa2, 0x7d, 0xa9, 0xbb, 0x23, 0xee, 0xef, 0xc8, 0x83, 0xcd, 0x9d, 0xfe, 0x76, 0xb7, 0x98,
-	0x44, 0xeb, 0xb0, 0x46, 0x03, 0xbd, 0xfd, 0xdd, 0x8e, 0xb8, 0xfb, 0xb5, 0x2c, 0x6d, 0xee, 0x75,
-	0xe5, 0xcd, 0xdd, 0x8e, 0x2c, 0xee, 0x76, 0xba, 0x4f, 0x8a, 0x29, 0xb4, 0x02, 0xa5, 0xa9, 0xcc,
-	0x83, 0x47, 0x7b, 0xdd, 0x62, 0x5a, 0xf8, 0x35, 0x05, 0x85, 0x1d, 0xc5, 0x39, 0xc1, 0x5e, 0x68,
-	0xca, 0x1a, 0xdc, 0x36, 0x28, 0x10, 0x3f, 0xd3, 0x45, 0x06, 0x88, 0x1a, 0x3a, 0x84, 0xbc, 0xed,
-	0x10, 0x15, 0xcb, 0xec, 0xd0, 0xf4, 0xac, 0xb9, 0x8d, 0xcf, 0x67, 0x9e, 0x95, 0xd1, 0xf7, 0x83,
-	0x34, 0x66, 0x1d, 0x57, 0x7a, 0x90, 0x90, 0x72, 0x76, 0x8c, 0xa2, 0xc7, 0x50, 0xe0, 0xc2, 0xaa,
-	0x83, 0x03, 0xf2, 0x34, 0x25, 0xbf, 0x3f, 0x07, 0xf9, 0x16, 0x4d, 0x88, 0x79, 0xf3, 0xc6, 0x04,
-	0x3c, 0x41, 0x6c, 0x58, 0x1a, 0x19, 0x8d, 0xcb, 0x99, 0xb9, 0x89, 0x77, 0x68, 0xc2, 0x05, 0x62,
-	0x06, 0xb7, 0x6f, 0x41, 0x96, 0xee, 0x16, 0x1e, 0x42, 0xf9, 0xaa, 0x53, 0xa2, 0x06, 0xdc, 0x65,
-	0x96, 0xbd, 0x20, 0xde, 0xb1, 0x8c, 0xcf, 0x6c, 0xcb, 0xc4, 0xa6, 0x47, 0x9d, 0xcd, 0x48, 0x25,
-	0x1a, 0x7a, 0x4c, 0xbc, 0xe3, 0x2e, 0x0f, 0x08, 0x4f, 0xa0, 0xc4, 0xb8, 0xda, 0x8a, 0x1b, 0x91,
-	0x20, 0xc8, 0xd8, 0x0a, 0x71, 0x68, 0xd6, 0x6d, 0x89, 0xfe, 0x8f, 0x9a, 0xb0, 0x6c, 0x10, 0x53,
-	0x66, 0xe4, 0xea, 0xb1, 0x62, 0x1e, 0xc5, 0xfd, 0x55, 0x90, 0x4a, 0x06, 0x31, 0x69, 0x35, 0x5b,
-	0x34, 0xd2, 0xb7, 0x0d, 0xc1, 0x87, 0xbb, 0x97, 0xd8, 0x85, 0xda, 0x90, 0x19, 0x2a, 0x2e, 0xa6,
-	0xdc, 0xb9, 0x8d, 0xc6, 0x1c, 0xae, 0x4c, 0x54, 0x26, 0xd1, 0x5c, 0x54, 0x81, 0xc5, 0xe8, 0x64,
-	0x81, 0x7e, 0x49, 0x8a, 0xd6, 0xc2, 0xd3, 0x50, 0x76, 0xca, 0xcc, 0x9b, 0x90, 0x15, 0x7e, 0x4e,
-	0xc1, 0xd2, 0x9e, 0xa3, 0x98, 0xee, 0x08, 0x3b, 0x21, 0xaf, 0x01, 0xcb, 0x2e, 0x36, 0x35, 0xec,
-	0xc8, 0xf1, 0x14, 0x0b, 0xaf, 0xf2, 0x95, 0x57, 0x35, 0x02, 0x4e, 0x5b, 0x0d, 0x91, 0x61, 0x83,
-	0x28, 0x5b, 0xd4, 0x78, 0xab, 0x23, 0x46, 0x3c, 0x19, 0x41, 0x2e, 0xac, 0x3a, 0x58, 0x25, 0x36,
-	0xc1, 0xa6, 0xf7, 0x8e, 0x62, 0xea, 0xfa, 0x8a, 0x2b, 0x11, 0xf7, 0x94, 0xe8, 0x3d, 0x58, 0x54,
-	0x5c, 0x97, 0xb5, 0x68, 0x9a, 0x3e, 0xee, 0x5b, 0x74, 0x2d, 0x6a, 0xe8, 0x7f, 0xb0, 0xa0, 0x18,
-	0xc1, 0x36, 0x7a, 0xcb, 0x33, 0x12, 0x5f, 0x09, 0x7f, 0xa7, 0xa0, 0xf8, 0xc8, 0xd1, 0xb0, 0xd3,
-	0x23, 0xba, 0x1e, 0x7a, 0xb5, 0x0f, 0x39, 0x43, 0x39, 0xc1, 0x8e, 0x6c, 0x05, 0x91, 0xd9, 0x8f,
-	0xe2, 0x92, 0x82, 0x29, 0x1f, 0xaf, 0x14, 0x28, 0x11, 0x45, 0x50, 0x0f, 0xb2, 0x8c, 0x30, 0xf5,
-	0x3e, 0x84, 0x0f, 0x12, 0x12, 0x4b, 0x47, 0xcf, 0xa0, 0xa4, 0x93, 0xe7, 0x3e, 0xd1, 0x14, 0x8f,
-	0x58, 0x26, 0x2f, 0x92, 0x35, 0x6f, 0x73, 0xe6, 0x7d, 0xd9, 0x8e, 0xb3, 0x28, 0x25, 0xed, 0xdd,
-	0xa2, 0xfe, 0x0e, 0x8a, 0xd6, 0x21, 0x37, 0x22, 0xba, 0x2e, 0x73, 0xc3, 0xd2, 0xd4, 0x30, 0x08,
-	0xa0, 0x4d, 0x8a, 0xb0, 0x59, 0x18, 0xf8, 0x33, 0xc2, 0xb8, 0x9c, 0xad, 0x25, 0xeb, 0x28, 0x98,
-	0x85, 0x27, 0xd8, 0xe9, 0x61, 0x1c, 0x04, 0xbd, 0x28, 0xb8, 0xc0, 0x82, 0x1e, 0x0f, 0xb6, 0x0b,
-	0x90, 0xf3, 0x62, 0x67, 0x85, 0x1f, 0x52, 0x80, 0x2e, 0x16, 0x85, 0xbe, 0x05, 0x08, 0x8b, 0xc2,
-	0x37, 0x72, 0x43, 0x27, 0xe8, 0x50, 0x0d, 0xf2, 0xc1, 0x4b, 0x5f, 0x0e, 0x86, 0x45, 0x78, 0x1d,
-	0x0b, 0x12, 0x04, 0x58, 0x5f, 0x21, 0x8e, 0xa8, 0x5d, 0x78, 0x83, 0xa7, 0x2f, 0xbe, 0xc1, 0xff,
-	0x0f, 0xe0, 0x59, 0x9e, 0xa2, 0xcb, 0x2e, 0x39, 0xc7, 0xfc, 0x4a, 0xdd, 0xa6, 0xc8, 0x80, 0x9c,
-	0x63, 0xb4, 0x02, 0x0b, 0xc4, 0x95, 0x87, 0xfe, 0x98, 0xba, 0xb3, 0x28, 0x65, 0x89, 0xdb, 0xf6,
-	0xc7, 0xc1, 0x38, 0x70, 0xfd, 0xa1, 0x47, 0xd4, 0x13, 0x97, 0x3a, 0x93, 0x91, 0xa2, 0xb5, 0xf0,
-	0x57, 0x0a, 0x56, 0xe3, 0xca, 0xa7, 0x67, 0xe5, 0x21, 0x14, 0x6e, 0xae, 0x69, 0xa5, 0xbc, 0x3b,
-	0xd9, 0x33, 0xe7, 0xb0, 0xc6, 0x5e, 0x5a, 0x9a, 0x1c, 0x1f, 0xda, 0xb6, 0x5c, 0x12, 0x3c, 0x10,
-	0xb7, 0x9c, 0xa6, 0x1f, 0x00, 0x5f, 0xcd, 0xad, 0xd4, 0x0f, 0x39, 0xfa, 0x9c, 0x42, 0xba, 0xc7,
-	0xe9, 0x2f, 0x44, 0x5c, 0x64, 0xc2, 0x6a, 0xa8, 0xcd, 0xfa, 0x36, 0xd6, 0xcd, 0x50, 0xdd, 0x2f,
-	0xe6, 0xd6, 0xdd, 0x0c, 0xf2, 0x23, 0xcd, 0x15, 0x4e, 0x3b, 0x85, 0xba, 0x0f, 0x33, 0x8b, 0xa9,
-	0x62, 0x5a, 0xf8, 0x2d, 0x0b, 0xcb, 0x03, 0x4f, 0xf1, 0xf0, 0xc8, 0xd7, 0xe9, 0x8d, 0x8b, 0x47,
-	0x64, 0x8e, 0x5e, 0x4b, 0xd9, 0xd6, 0x15, 0x35, 0x9c, 0xc0, 0x0f, 0x67, 0x76, 0xd4, 0x65, 0x3c,
-	0xd3, 0x60, 0x3f, 0xe0, 0x32, 0xc2, 0x17, 0x25, 0x58, 0x11, 0x86, 0x9e, 0x43, 0x9e, 0xc9, 0xa9,
-	0x8a, 0xa9, 0x62, 0x9d, 0x4f, 0x85, 0xed, 0x6b, 0xea, 0x6d, 0x51, 0x32, 0xda, 0x4e, 0xec, 0x5b,
-	0xc2, 0x8a, 0x51, 0x74, 0x06, 0x45, 0x26, 0x89, 0xcf, 0x6c, 0xe2, 0xd0, 0x4d, 0xfc, 0x73, 0xe2,
-	0x9b, 0x6b, 0xca, 0x76, 0x23, 0x42, 0xaa, 0xba, 0x64, 0x4d, 0x83, 0x95, 0xef, 0xa1, 0x7c, 0x95,
-	0x2d, 0xa8, 0x13, 0xce, 0xc5, 0xf7, 0x1a, 0xb4, 0x7c, 0x2a, 0x56, 0xce, 0xa1, 0x72, 0xb5, 0x11,
-	0xe8, 0x3b, 0x28, 0x31, 0x9b, 0xb1, 0xc6, 0x66, 0x4f, 0xdc, 0x46, 0xf7, 0xff, 0x9b, 0x9e, 0xa8,
-	0x49, 0x4b, 0x21, 0x15, 0x07, 0x2a, 0x2f, 0xe0, 0xde, 0x95, 0x6e, 0xa0, 0x43, 0x28, 0x52, 0xbb,
-	0x6f, 0x42, 0xf9, 0x0e, 0x67, 0xe2, 0xeb, 0xe8, 0x53, 0xab, 0xbd, 0xf5, 0xf2, 0x4d, 0x35, 0xf9,
-	0xea, 0x4d, 0x35, 0xf9, 0xe7, 0x9b, 0x6a, 0xf2, 0xc7, 0xb7, 0xd5, 0xc4, 0xab, 0xb7, 0xd5, 0xc4,
-	0xef, 0x6f, 0xab, 0x89, 0xc3, 0x0f, 0x67, 0xfc, 0x42, 0x98, 0xfe, 0xb9, 0x35, 0x5c, 0xa0, 0xb1,
-	0x4f, 0xff, 0x09, 0x00, 0x00, 0xff, 0xff, 0x20, 0xa2, 0xcb, 0x99, 0x94, 0x0d, 0x00, 0x00,
+	// 1914 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x58, 0xcd, 0x6f, 0x1c, 0x49,
+	0x15, 0x77, 0xcf, 0xb4, 0xc7, 0xf6, 0xb3, 0xc7, 0x99, 0xa9, 0x38, 0xce, 0xd8, 0x06, 0xc7, 0xb4,
+	0x84, 0x64, 0x65, 0x77, 0xc7, 0x71, 0x08, 0x68, 0xc5, 0x01, 0xe1, 0xb1, 0xc7, 0xeb, 0x89, 0x6c,
+	0x67, 0x68, 0x8f, 0xb3, 0xbb, 0x01, 0x6d, 0x53, 0xd3, 0x5d, 0x1e, 0x97, 0xdc, 0x5f, 0xdb, 0xd5,
+	0x6d, 0xe2, 0x48, 0x9c, 0xe1, 0x06, 0x12, 0x67, 0x0e, 0x1c, 0xb8, 0x20, 0x71, 0x40, 0xe2, 0xba,
+	0x27, 0x2e, 0x7b, 0x63, 0xc5, 0x05, 0xc4, 0x21, 0x42, 0xc9, 0x81, 0x7f, 0x03, 0xd5, 0x47, 0xf7,
+	0xcc, 0x78, 0x3e, 0x32, 0x49, 0xcc, 0xc9, 0xd3, 0xef, 0xd5, 0xfb, 0xbd, 0xcf, 0x7a, 0xf5, 0x9e,
+	0x61, 0xd3, 0xb9, 0x72, 0x9e, 0x87, 0x51, 0x10, 0x07, 0x76, 0xe0, 0x6e, 0x51, 0xdf, 0x21, 0xcf,
+	0x49, 0xb4, 0x45, 0x2e, 0x89, 0x1f, 0x33, 0xf5, 0xa7, 0x2a, 0xd8, 0x68, 0xad, 0xf7, 0x64, 0x55,
+	0x9d, 0xac, 0xca, 0x23, 0xab, 0x2b, 0x76, 0xc0, 0xbc, 0x80, 0x59, 0x82, 0xbf, 0x25, 0x3f, 0xa4,
+	0xdc, 0xea, 0x52, 0x27, 0xe8, 0x04, 0x92, 0xce, 0x7f, 0x29, 0xea, 0x83, 0xa1, 0x7a, 0xd9, 0x39,
+	0x8e, 0x88, 0xb3, 0x15, 0x11, 0x2f, 0xb8, 0xc4, 0xae, 0x15, 0x11, 0xcc, 0x02, 0x5f, 0x49, 0x7c,
+	0x30, 0x54, 0x22, 0x23, 0x5c, 0x6e, 0x6f, 0xd9, 0x6e, 0xd0, 0x56, 0x87, 0xb7, 0xdf, 0x78, 0x98,
+	0x25, 0x6d, 0x6c, 0xdb, 0x41, 0xe2, 0xc7, 0x52, 0xc4, 0xf8, 0xbb, 0x06, 0xb7, 0xf6, 0x13, 0xdf,
+	0xa1, 0x7e, 0xe7, 0x34, 0x74, 0x70, 0x4c, 0x9e, 0x6e, 0xa3, 0xef, 0xc0, 0x42, 0x48, 0xa2, 0x90,
+	0xc4, 0x09, 0x76, 0x2d, 0xea, 0x54, 0xb4, 0x0d, 0x6d, 0xb3, 0x68, 0xce, 0x67, 0xb4, 0x86, 0x83,
+	0xee, 0x43, 0xf9, 0x4c, 0x4a, 0x59, 0x97, 0xd8, 0x4d, 0x88, 0x15, 0x86, 0x5e, 0x25, 0xb7, 0xa1,
+	0x6d, 0x4e, 0x9b, 0xb7, 0x14, 0xe3, 0x29, 0xa7, 0x37, 0x43, 0x0f, 0x79, 0x50, 0x4c, 0xcf, 0x0a,
+	0x93, 0x2a, 0xf9, 0x0d, 0x6d, 0x73, 0xa1, 0x76, 0xf0, 0xf5, 0xcb, 0x7b, 0x53, 0xff, 0x7e, 0x79,
+	0xef, 0xc7, 0x1d, 0x1a, 0x9f, 0x27, 0xed, 0xaa, 0x1d, 0x78, 0x5b, 0x7d, 0xf6, 0x5f, 0x3e, 0xfa,
+	0xc8, 0x3e, 0xc7, 0xd4, 0xef, 0x3a, 0xe0, 0xc4, 0x57, 0x21, 0x61, 0xd5, 0x13, 0x12, 0x51, 0xec,
+	0xd2, 0x17, 0xb8, 0xed, 0x92, 0x86, 0x1f, 0x9b, 0x0b, 0x0a, 0xbe, 0xc1, 0xd1, 0x8d, 0xdf, 0xe5,
+	0x60, 0x51, 0x79, 0x54, 0xe7, 0x69, 0x7a, 0xba, 0x8d, 0x0e, 0x61, 0x26, 0x11, 0xce, 0xb1, 0x8a,
+	0xb6, 0x91, 0xdf, 0x9c, 0x7f, 0xf8, 0x61, 0x75, 0x4c, 0x5a, 0xab, 0xd7, 0xe2, 0x51, 0xd3, 0xb9,
+	0xa5, 0x66, 0x0a, 0x81, 0xf6, 0x40, 0xe7, 0x76, 0x08, 0x77, 0x17, 0x1f, 0x3e, 0x98, 0x04, 0x4a,
+	0x19, 0x52, 0x6d, 0x5d, 0x85, 0xc4, 0x14, 0xd2, 0x86, 0x07, 0x3a, 0xff, 0x42, 0x4b, 0x50, 0x6a,
+	0x7d, 0xde, 0xac, 0x5b, 0xa7, 0xc7, 0x27, 0xcd, 0xfa, 0x6e, 0x63, 0xbf, 0x51, 0xdf, 0x2b, 0x4d,
+	0xa1, 0xbb, 0x70, 0x5b, 0x50, 0x9b, 0x66, 0xfd, 0xa8, 0x71, 0x7a, 0x64, 0x9d, 0xec, 0x1c, 0x35,
+	0x0f, 0xeb, 0x25, 0x0d, 0xdd, 0x83, 0x35, 0xc1, 0xd8, 0x3f, 0x3d, 0xde, 0x6b, 0x1c, 0x7f, 0x62,
+	0x99, 0x3b, 0xad, 0xba, 0xb5, 0x73, 0xbc, 0x67, 0x35, 0x8e, 0xf7, 0xea, 0x9f, 0x95, 0x72, 0xe8,
+	0x0e, 0x94, 0xfb, 0x24, 0x9f, 0x3e, 0x69, 0xd5, 0x4b, 0x79, 0xe3, 0x6f, 0x39, 0x28, 0x1e, 0xe1,
+	0xe8, 0x82, 0xc4, 0x69, 0x50, 0xd6, 0x60, 0xce, 0x13, 0x84, 0x6e, 0x8a, 0x67, 0x25, 0xa1, 0xe1,
+	0xa0, 0x67, 0xb0, 0x10, 0x46, 0xd4, 0x26, 0x96, 0x74, 0x5a, 0xf8, 0x3a, 0xff, 0xf0, 0xfb, 0x63,
+	0x7d, 0x95, 0xf0, 0x4d, 0x2e, 0x26, 0x43, 0xa7, 0x34, 0x1d, 0x4c, 0x99, 0xf3, 0x61, 0x97, 0x8a,
+	0x3e, 0x85, 0xa2, 0x52, 0x6c, 0x47, 0x84, 0x83, 0xe7, 0x05, 0xf8, 0x83, 0x09, 0xc0, 0x77, 0x85,
+	0x40, 0x17, 0x77, 0xc1, 0xeb, 0x21, 0xf7, 0x00, 0x7b, 0x81, 0x43, 0xcf, 0xae, 0x2a, 0xfa, 0xc4,
+	0xc0, 0x47, 0x42, 0x60, 0x00, 0x58, 0x92, 0x6b, 0x33, 0x30, 0x2d, 0x4e, 0x1b, 0x8f, 0xa1, 0x32,
+	0xca, 0x4b, 0x54, 0x85, 0xdb, 0x32, 0x64, 0xbf, 0xa0, 0xf1, 0xb9, 0x45, 0x9e, 0x87, 0x81, 0x4f,
+	0xfc, 0x58, 0x44, 0x56, 0x37, 0xcb, 0x82, 0xf5, 0x29, 0x8d, 0xcf, 0xeb, 0x8a, 0x61, 0x7c, 0x06,
+	0x65, 0x89, 0x55, 0xc3, 0x2c, 0x03, 0x41, 0xa0, 0x87, 0x98, 0x46, 0x42, 0x6a, 0xce, 0x14, 0xbf,
+	0xd1, 0x16, 0x2c, 0x79, 0xd4, 0xb7, 0x24, 0xb8, 0x7d, 0x8e, 0xfd, 0x4e, 0xf7, 0xba, 0x15, 0xcd,
+	0xb2, 0x47, 0x7d, 0x61, 0xcd, 0xae, 0xe0, 0x34, 0x43, 0xcf, 0x48, 0xe0, 0xf6, 0x90, 0x70, 0xa1,
+	0x1a, 0xe8, 0x6d, 0xcc, 0x88, 0xc0, 0x9e, 0x7f, 0x58, 0x9d, 0x20, 0x2a, 0x3d, 0x96, 0x99, 0x42,
+	0x16, 0xad, 0xc2, 0x6c, 0xe6, 0x19, 0xd7, 0x5f, 0x36, 0xb3, 0x6f, 0xe3, 0xf3, 0x54, 0x6d, 0x5f,
+	0x30, 0x6f, 0x42, 0xad, 0xf1, 0x67, 0x0d, 0x8a, 0x27, 0x41, 0x12, 0xd9, 0xe4, 0xc9, 0x19, 0xbf,
+	0x52, 0x0c, 0xfd, 0x0c, 0x8a, 0xdd, 0x5e, 0x96, 0x56, 0xf0, 0xc8, 0x0a, 0xcd, 0x08, 0x97, 0xdb,
+	0xd5, 0x86, 0xa4, 0x9d, 0x64, 0xd2, 0x0d, 0x87, 0x27, 0x9c, 0xf5, 0x7c, 0xa3, 0x47, 0x30, 0x83,
+	0x1d, 0x27, 0x22, 0x8c, 0x09, 0x2f, 0xe7, 0x6a, 0x95, 0x7f, 0xfc, 0xf5, 0xa3, 0x25, 0xd5, 0xe0,
+	0x77, 0x24, 0xe7, 0x24, 0x8e, 0xa8, 0xdf, 0x39, 0x98, 0x32, 0xd3, 0xa3, 0xb5, 0x59, 0x28, 0x30,
+	0x61, 0xa4, 0xf1, 0xa7, 0x3c, 0xdc, 0x6a, 0x45, 0xd8, 0x67, 0x67, 0x24, 0x4a, 0xe3, 0xd0, 0x81,
+	0x25, 0x46, 0x7c, 0x87, 0x44, 0xd6, 0xcd, 0x19, 0x6e, 0x22, 0x09, 0xd9, 0x4b, 0x43, 0x1e, 0xdc,
+	0x8d, 0x88, 0x4d, 0x43, 0x4a, 0xfc, 0xf8, 0x9a, 0xae, 0xdc, 0xfb, 0xe8, 0xba, 0x93, 0xa1, 0xf6,
+	0xa9, 0x5b, 0x81, 0x59, 0xcc, 0x98, 0x6c, 0x23, 0x79, 0x51, 0x92, 0x33, 0xe2, 0xbb, 0xe1, 0xa0,
+	0x65, 0x28, 0x60, 0x8f, 0x1f, 0x13, 0x37, 0x51, 0x37, 0xd5, 0x17, 0xaa, 0x41, 0x41, 0xda, 0x5d,
+	0x99, 0x16, 0x06, 0xdd, 0x1f, 0x5b, 0x14, 0x7d, 0x89, 0x37, 0x95, 0x24, 0x3a, 0x80, 0xb9, 0xcc,
+	0x9e, 0x4a, 0xe1, 0xad, 0x61, 0xba, 0xc2, 0xc6, 0x3f, 0xf3, 0x50, 0x7a, 0x12, 0x39, 0x24, 0xda,
+	0xa7, 0xae, 0x9b, 0x66, 0xeb, 0x14, 0xe6, 0x3d, 0x7c, 0x41, 0x22, 0x2b, 0xe0, 0x9c, 0xf1, 0xc5,
+	0x3b, 0x24, 0x70, 0x02, 0x4f, 0x3d, 0x1c, 0x20, 0x80, 0x04, 0x05, 0xed, 0xc3, 0xb4, 0x04, 0xcc,
+	0xbd, 0x0b, 0xe0, 0xc1, 0x94, 0x29, 0xc5, 0xd1, 0x17, 0x50, 0x76, 0xe9, 0x97, 0x09, 0x75, 0x70,
+	0x4c, 0x03, 0x5f, 0x19, 0x29, 0xdb, 0xdd, 0xd6, 0xd8, 0x28, 0x1c, 0x76, 0xa5, 0x04, 0xa4, 0xe8,
+	0x76, 0x25, 0xf7, 0x1a, 0x15, 0xdd, 0x83, 0xf9, 0x33, 0xea, 0xba, 0x96, 0x4a, 0x5f, 0x5e, 0xa4,
+	0x0f, 0x38, 0x69, 0x47, 0xa6, 0x50, 0xbc, 0x1e, 0x3c, 0x3e, 0x67, 0x84, 0x88, 0x2c, 0x22, 0xfe,
+	0x7a, 0x5c, 0x90, 0x68, 0x9f, 0x10, 0xce, 0x8c, 0x33, 0x66, 0x41, 0x32, 0xe3, 0x94, 0xf9, 0x21,
+	0xa0, 0x38, 0x88, 0xb1, 0x6b, 0x71, 0x34, 0xe2, 0x58, 0x42, 0xaa, 0x32, 0x23, 0x34, 0x94, 0x04,
+	0x67, 0x5f, 0x30, 0x8e, 0x38, 0x7d, 0xe0, 0xb4, 0x80, 0xa9, 0xcc, 0x0e, 0x9c, 0x6e, 0x71, 0x7a,
+	0xad, 0x08, 0xf3, 0x71, 0x37, 0x6b, 0xc6, 0xaf, 0x73, 0x80, 0x06, 0x1d, 0x46, 0x3f, 0x05, 0x48,
+	0x1d, 0x26, 0xef, 0x77, 0xff, 0xd2, 0x0c, 0x77, 0xe1, 0xd0, 0x06, 0x2c, 0xf0, 0x89, 0xcc, 0xe2,
+	0xad, 0x3b, 0xbd, 0x72, 0x45, 0x13, 0x38, 0xad, 0x89, 0x69, 0xd4, 0x70, 0x06, 0xc6, 0xab, 0xfc,
+	0xe0, 0x78, 0xf5, 0x6d, 0x00, 0xe9, 0x35, 0xa3, 0x2f, 0x88, 0xba, 0x3c, 0x73, 0x82, 0x72, 0x42,
+	0x5f, 0x10, 0x74, 0x07, 0x0a, 0x94, 0x59, 0xed, 0xe4, 0x4a, 0x44, 0x7e, 0xd6, 0x9c, 0xa6, 0xac,
+	0x96, 0x5c, 0xf1, 0xe6, 0xcc, 0x92, 0x76, 0x4c, 0xed, 0x0b, 0x26, 0xa2, 0xae, 0x9b, 0xd9, 0xb7,
+	0xf1, 0xdf, 0x1c, 0xdc, 0xed, 0x5a, 0xde, 0xff, 0x72, 0x3d, 0xbb, 0xc9, 0x5e, 0x7a, 0xad, 0x93,
+	0xbe, 0x80, 0x35, 0x39, 0x42, 0x38, 0x56, 0xd7, 0xe9, 0x30, 0x60, 0x94, 0x27, 0x84, 0x55, 0xf2,
+	0x62, 0x1c, 0xfb, 0xe1, 0xc4, 0x9a, 0x9a, 0x29, 0x46, 0x53, 0x41, 0x98, 0x2b, 0x0a, 0x7e, 0x80,
+	0xc3, 0x90, 0x0f, 0x77, 0x53, 0xdd, 0xb2, 0x43, 0x75, 0xf5, 0xea, 0x42, 0xef, 0x0f, 0x26, 0xd6,
+	0xbb, 0xc3, 0xe5, 0x33, 0x9d, 0x77, 0x14, 0x6c, 0x1f, 0x95, 0x3d, 0xd6, 0x67, 0x73, 0xa5, 0xbc,
+	0xf1, 0x07, 0x80, 0xa5, 0x93, 0x18, 0xc7, 0xe4, 0x2c, 0x71, 0x45, 0xc5, 0xa5, 0x61, 0xf6, 0x60,
+	0x5e, 0x94, 0xa5, 0x15, 0xba, 0xd8, 0x4e, 0xdf, 0xc3, 0xc7, 0xe3, 0x7b, 0xd6, 0x10, 0x9c, 0x7e,
+	0x62, 0x93, 0x63, 0x79, 0xe9, 0xd8, 0x02, 0x41, 0x46, 0x43, 0x01, 0x14, 0xa5, 0x3a, 0xb5, 0x57,
+	0xa8, 0xf6, 0x70, 0xf0, 0x9e, 0x0a, 0x4d, 0x89, 0x26, 0xa7, 0xa4, 0xa0, 0x87, 0x82, 0x7e, 0xa3,
+	0xc1, 0x9a, 0x1d, 0xf8, 0x8e, 0x88, 0x06, 0x76, 0xad, 0x1e, 0x67, 0xb9, 0x81, 0xaa, 0xd7, 0x1f,
+	0xbd, 0xbd, 0xfe, 0xdd, 0x2e, 0xe8, 0x10, 0x9f, 0x57, 0xec, 0x51, 0xec, 0x11, 0x16, 0xc5, 0x11,
+	0xed, 0x74, 0x48, 0x44, 0x1c, 0xf5, 0x6c, 0xdc, 0x80, 0x45, 0xad, 0x14, 0x72, 0xb8, 0x45, 0x19,
+	0x1b, 0xfd, 0x4a, 0x83, 0x15, 0x37, 0xf0, 0x3b, 0x56, 0x4c, 0x22, 0x6f, 0x20, 0x42, 0x33, 0xef,
+	0x5a, 0x12, 0x87, 0x81, 0xdf, 0x69, 0x91, 0xc8, 0x1b, 0x12, 0x9e, 0x65, 0x77, 0x28, 0x6f, 0xf5,
+	0xe7, 0x50, 0x19, 0x55, 0x48, 0x68, 0x2f, 0x7d, 0xa5, 0xde, 0xe9, 0xd9, 0x53, 0x6f, 0xd4, 0xea,
+	0x57, 0x1a, 0x2c, 0x0f, 0x2f, 0x1d, 0xf4, 0x0c, 0x4a, 0xa2, 0x2a, 0x89, 0xa3, 0x62, 0x90, 0x35,
+	0x9d, 0x07, 0x6f, 0xa7, 0xab, 0xe1, 0x98, 0x8b, 0x0a, 0x49, 0x7d, 0xa3, 0x4f, 0xa0, 0x20, 0x37,
+	0x68, 0xb5, 0xa0, 0x8d, 0x78, 0x0f, 0xe5, 0xd2, 0x5d, 0xed, 0x35, 0xcc, 0x14, 0x62, 0xa6, 0x12,
+	0x5f, 0xb5, 0x61, 0x6d, 0x4c, 0xe5, 0xdd, 0x50, 0x90, 0x7e, 0x39, 0xa8, 0xa4, 0xa7, 0x98, 0xd0,
+	0x17, 0x80, 0xb2, 0x72, 0x7d, 0xff, 0x50, 0x95, 0x32, 0x2c, 0x45, 0xe1, 0x55, 0x30, 0xaa, 0x76,
+	0x6e, 0xc6, 0xc1, 0x6c, 0x77, 0x92, 0xdd, 0xf1, 0xb1, 0x3e, 0x9b, 0x2f, 0xe9, 0xc6, 0x1f, 0x35,
+	0x40, 0xa2, 0x79, 0xf6, 0x6f, 0x28, 0x8b, 0x90, 0xcb, 0x76, 0xd1, 0x1c, 0x15, 0xf3, 0x23, 0xbb,
+	0xf2, 0xda, 0x81, 0x2b, 0xa7, 0x70, 0x53, 0x7d, 0xf1, 0xe7, 0xf1, 0x1c, 0x33, 0x4b, 0xee, 0x68,
+	0xe2, 0xfd, 0x9c, 0x35, 0xe7, 0xce, 0x31, 0x93, 0xeb, 0x43, 0xff, 0x66, 0xab, 0x5f, 0xdb, 0x6c,
+	0x3f, 0x80, 0x32, 0x8e, 0x03, 0x8f, 0xda, 0x56, 0x44, 0x58, 0xe0, 0x26, 0x3c, 0xf0, 0xa2, 0x35,
+	0x95, 0xcd, 0x92, 0x64, 0x98, 0x19, 0xdd, 0xf8, 0x2a, 0x0f, 0xdf, 0xca, 0x1e, 0x96, 0x61, 0x3b,
+	0xd5, 0x75, 0x8b, 0xdf, 0xfc, 0xfa, 0x2f, 0x43, 0x81, 0xbf, 0xc8, 0x24, 0x12, 0x76, 0xcf, 0x99,
+	0xea, 0x6b, 0xbc, 0xd1, 0x07, 0x50, 0x60, 0x31, 0x8e, 0x13, 0x26, 0x2c, 0x5d, 0x9c, 0x24, 0xf5,
+	0xbb, 0x4a, 0xe5, 0x89, 0x90, 0x33, 0x95, 0x3c, 0xfa, 0x11, 0xac, 0x7d, 0x99, 0x60, 0x3f, 0x4e,
+	0x3c, 0xcb, 0x0e, 0xfc, 0x4b, 0x12, 0x31, 0x3e, 0x3f, 0x66, 0x3b, 0x5d, 0x41, 0x04, 0x62, 0x45,
+	0x1d, 0xd9, 0xcd, 0x4e, 0xa4, 0x5b, 0xeb, 0xf0, 0xf0, 0xcd, 0x0c, 0x0f, 0x1f, 0xba, 0x0f, 0xe5,
+	0x74, 0x00, 0xe1, 0xaf, 0xbf, 0xc5, 0x7f, 0x89, 0xd9, 0xad, 0x68, 0xde, 0x4a, 0x19, 0x4d, 0x12,
+	0xb5, 0xa8, 0x7d, 0xc1, 0x07, 0x3d, 0x16, 0x93, 0xd0, 0xe2, 0xfb, 0x9e, 0xa5, 0xf4, 0xb3, 0xca,
+	0x9c, 0x1c, 0xf4, 0x38, 0x87, 0x6f, 0x85, 0x3f, 0x51, 0x74, 0xf4, 0x5d, 0x58, 0x94, 0x33, 0x17,
+	0x8d, 0xaf, 0xac, 0x98, 0x92, 0xa8, 0x02, 0x02, 0xb6, 0x98, 0x51, 0x5b, 0x94, 0x44, 0xc6, 0x4b,
+	0x0d, 0x56, 0x0f, 0x7b, 0x29, 0xa7, 0x21, 0x23, 0x51, 0x3c, 0x2a, 0x7b, 0x08, 0x74, 0x1f, 0x7b,
+	0x44, 0x55, 0x9b, 0xf8, 0xcd, 0xed, 0xa2, 0x3e, 0x8d, 0x29, 0x76, 0x79, 0xbd, 0x75, 0xf8, 0x22,
+	0x1e, 0x7a, 0x6a, 0x66, 0x2b, 0x29, 0xce, 0x91, 0x60, 0x34, 0x43, 0x0f, 0x7d, 0x0c, 0x15, 0x0f,
+	0x53, 0x3f, 0x26, 0x3e, 0xf6, 0x6d, 0x62, 0x9d, 0x45, 0xd8, 0x16, 0x03, 0x3a, 0x97, 0x91, 0x49,
+	0x5d, 0xee, 0xe1, 0xef, 0x2b, 0x36, 0x97, 0x7c, 0x04, 0xcb, 0xc2, 0xf5, 0x74, 0x46, 0xb1, 0xfc,
+	0x40, 0xf6, 0x04, 0x91, 0x72, 0xdd, 0x5c, 0xe2, 0xdc, 0x74, 0xd6, 0x38, 0x56, 0x3c, 0xe3, 0xf7,
+	0x39, 0xb8, 0x23, 0x87, 0xb9, 0x34, 0xdf, 0xa9, 0x6f, 0xd7, 0x2b, 0x51, 0x1b, 0xa8, 0xc4, 0x6e,
+	0x51, 0xe5, 0xfe, 0xbf, 0x45, 0x95, 0x7f, 0x53, 0x51, 0x0d, 0xad, 0x13, 0xfd, 0x6d, 0xea, 0x64,
+	0x7a, 0x78, 0x9d, 0x18, 0x7f, 0xd1, 0x60, 0x59, 0xc6, 0x27, 0xbb, 0xc6, 0x63, 0x9a, 0x8d, 0xba,
+	0x98, 0xb9, 0xd1, 0x17, 0x33, 0x3f, 0x49, 0x37, 0xd1, 0x47, 0x5c, 0x87, 0xc1, 0xa2, 0x9d, 0x1e,
+	0x52, 0xb4, 0x35, 0xf3, 0xeb, 0x57, 0xeb, 0xda, 0x37, 0xaf, 0xd6, 0xb5, 0xff, 0xbc, 0x5a, 0xd7,
+	0x7e, 0xfb, 0x7a, 0x7d, 0xea, 0x9b, 0xd7, 0xeb, 0x53, 0xff, 0x7a, 0xbd, 0x3e, 0xf5, 0xec, 0xe3,
+	0xc9, 0xff, 0x55, 0xda, 0xff, 0x3f, 0xed, 0x76, 0x41, 0x30, 0xbe, 0xf7, 0xbf, 0x00, 0x00, 0x00,
+	0xff, 0xff, 0xc3, 0xa2, 0xc7, 0xf2, 0xf9, 0x16, 0x00, 0x00,
 }
 
 func (m *FundingUpdateV1) Marshal() (dAtA []byte, err error) {
@@ -1556,6 +2376,73 @@ func (m *MarketModifyEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *SourceOfFunds) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SourceOfFunds) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SourceOfFunds) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Source != nil {
+		{
+			size := m.Source.Size()
+			i -= size
+			if _, err := m.Source.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SourceOfFunds_SubaccountId) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SourceOfFunds_SubaccountId) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.SubaccountId != nil {
+		{
+			size, err := m.SubaccountId.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SourceOfFunds_Address) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SourceOfFunds_Address) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.Address)
+	copy(dAtA[i:], m.Address)
+	i = encodeVarintEvents(dAtA, i, uint64(len(m.Address)))
+	i--
+	dAtA[i] = 0x12
+	return len(dAtA) - i, nil
+}
 func (m *TransferEventV1) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1576,6 +2463,30 @@ func (m *TransferEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.Recipient != nil {
+		{
+			size, err := m.Recipient.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x32
+	}
+	if m.Sender != nil {
+		{
+			size, err := m.Sender.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
 	if m.Amount != 0 {
 		i = encodeVarintEvents(dAtA, i, uint64(m.Amount))
 		i--
@@ -1586,26 +2497,30 @@ func (m *TransferEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x18
 	}
-	{
-		size, err := m.RecipientSubaccountId.MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
+	if m.RecipientSubaccountId != nil {
+		{
+			size, err := m.RecipientSubaccountId.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
 		}
-		i -= size
-		i = encodeVarintEvents(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x12
 	}
-	i--
-	dAtA[i] = 0x12
-	{
-		size, err := m.SenderSubaccountId.MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
+	if m.SenderSubaccountId != nil {
+		{
+			size, err := m.SenderSubaccountId.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
 		}
-		i -= size
-		i = encodeVarintEvents(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0xa
 	}
-	i--
-	dAtA[i] = 0xa
 	return len(dAtA) - i, nil
 }
 
@@ -1629,6 +2544,16 @@ func (m *OrderFillEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.TotalFilledTaker != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.TotalFilledTaker))
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.TotalFilledMaker != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.TotalFilledMaker))
+		i--
+		dAtA[i] = 0x38
+	}
 	if m.TakerFee != 0 {
 		i = encodeVarintEvents(dAtA, i, uint64((uint64(m.TakerFee)<<1)^uint64((m.TakerFee>>63))))
 		i--
@@ -1887,16 +2812,16 @@ func (m *StatefulOrderEventV1_OrderPlace) MarshalToSizedBuffer(dAtA []byte) (int
 	}
 	return len(dAtA) - i, nil
 }
-func (m *StatefulOrderEventV1_OrderCancel) MarshalTo(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_OrderRemoval) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StatefulOrderEventV1_OrderCancel) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_OrderRemoval) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
-	if m.OrderCancel != nil {
+	if m.OrderRemoval != nil {
 		{
-			size, err := m.OrderCancel.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.OrderRemoval.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -1904,20 +2829,20 @@ func (m *StatefulOrderEventV1_OrderCancel) MarshalToSizedBuffer(dAtA []byte) (in
 			i = encodeVarintEvents(dAtA, i, uint64(size))
 		}
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x22
 	}
 	return len(dAtA) - i, nil
 }
-func (m *StatefulOrderEventV1_OrderExpiration) MarshalTo(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacement) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StatefulOrderEventV1_OrderExpiration) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacement) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
-	if m.OrderExpiration != nil {
+	if m.ConditionalOrderPlacement != nil {
 		{
-			size, err := m.OrderExpiration.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.ConditionalOrderPlacement.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -1925,7 +2850,49 @@ func (m *StatefulOrderEventV1_OrderExpiration) MarshalToSizedBuffer(dAtA []byte)
 			i = encodeVarintEvents(dAtA, i, uint64(size))
 		}
 		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x2a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggered) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StatefulOrderEventV1_ConditionalOrderTriggered) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.ConditionalOrderTriggered != nil {
+		{
+			size, err := m.ConditionalOrderTriggered.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x32
+	}
+	return len(dAtA) - i, nil
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacement) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StatefulOrderEventV1_LongTermOrderPlacement) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.LongTermOrderPlacement != nil {
+		{
+			size, err := m.LongTermOrderPlacement.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x3a
 	}
 	return len(dAtA) - i, nil
 }
@@ -1964,7 +2931,7 @@ func (m *StatefulOrderEventV1_StatefulOrderPlacementV1) MarshalToSizedBuffer(dAt
 	return len(dAtA) - i, nil
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Marshal() (dAtA []byte, err error) {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1974,19 +2941,24 @@ func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Marshal() (dAtA []byte
 	return dAtA[:n], nil
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) MarshalTo(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.CanceledOrderId != nil {
+	if m.Reason != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.Reason))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.RemovedOrderId != nil {
 		{
-			size, err := m.CanceledOrderId.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.RemovedOrderId.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -1999,7 +2971,7 @@ func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) MarshalToSizedBuffer(d
 	return len(dAtA) - i, nil
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) Marshal() (dAtA []byte, err error) {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -2009,19 +2981,19 @@ func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) Marshal() (dAtA []byte,
 	return dAtA[:n], nil
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) MarshalTo(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.ExpiredOrderId != nil {
+	if m.Order != nil {
 		{
-			size, err := m.ExpiredOrderId.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.Order.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -2030,6 +3002,354 @@ func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) MarshalToSizedBuffer(dA
 		}
 		i--
 		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.TriggeredOrderId != nil {
+		{
+			size, err := m.TriggeredOrderId.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Order != nil {
+		{
+			size, err := m.Order.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintEvents(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AssetCreateEventV1) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AssetCreateEventV1) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AssetCreateEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.AtomicResolution != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64((uint32(m.AtomicResolution)<<1)^uint32((m.AtomicResolution>>31))))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.MarketId != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.MarketId))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.HasMarket {
+		i--
+		if m.HasMarket {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Symbol) > 0 {
+		i -= len(m.Symbol)
+		copy(dAtA[i:], m.Symbol)
+		i = encodeVarintEvents(dAtA, i, uint64(len(m.Symbol)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Id != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.Id))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PerpetualMarketCreateEventV1) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PerpetualMarketCreateEventV1) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PerpetualMarketCreateEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.LiquidityTier != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.LiquidityTier))
+		i--
+		dAtA[i] = 0x50
+	}
+	if m.StepBaseQuantums != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.StepBaseQuantums))
+		i--
+		dAtA[i] = 0x48
+	}
+	if m.SubticksPerTick != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.SubticksPerTick))
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.AtomicResolution != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64((uint32(m.AtomicResolution)<<1)^uint32((m.AtomicResolution>>31))))
+		i--
+		dAtA[i] = 0x38
+	}
+	if m.QuantumConversionExponent != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64((uint32(m.QuantumConversionExponent)<<1)^uint32((m.QuantumConversionExponent>>31))))
+		i--
+		dAtA[i] = 0x30
+	}
+	if m.Status != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.Status))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.MarketId != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.MarketId))
+		i--
+		dAtA[i] = 0x20
+	}
+	if len(m.Ticker) > 0 {
+		i -= len(m.Ticker)
+		copy(dAtA[i:], m.Ticker)
+		i = encodeVarintEvents(dAtA, i, uint64(len(m.Ticker)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.ClobPairId != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.ClobPairId))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Id != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.Id))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *LiquidityTierUpsertEventV1) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LiquidityTierUpsertEventV1) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LiquidityTierUpsertEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.BasePositionNotional != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.BasePositionNotional))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.MaintenanceFractionPpm != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.MaintenanceFractionPpm))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.InitialMarginPpm != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.InitialMarginPpm))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarintEvents(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Id != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.Id))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *UpdateClobPairEventV1) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *UpdateClobPairEventV1) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *UpdateClobPairEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.StepBaseQuantums != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.StepBaseQuantums))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.SubticksPerTick != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.SubticksPerTick))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.QuantumConversionExponent != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64((uint32(m.QuantumConversionExponent)<<1)^uint32((m.QuantumConversionExponent>>31))))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Status != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.Status))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.ClobPairId != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.ClobPairId))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *UpdatePerpetualEventV1) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *UpdatePerpetualEventV1) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *UpdatePerpetualEventV1) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.LiquidityTier != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.LiquidityTier))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.AtomicResolution != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64((uint32(m.AtomicResolution)<<1)^uint32((m.AtomicResolution>>31))))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.MarketId != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.MarketId))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Ticker) > 0 {
+		i -= len(m.Ticker)
+		copy(dAtA[i:], m.Ticker)
+		i = encodeVarintEvents(dAtA, i, uint64(len(m.Ticker)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Id != 0 {
+		i = encodeVarintEvents(dAtA, i, uint64(m.Id))
+		i--
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -2188,21 +3508,67 @@ func (m *MarketModifyEventV1) Size() (n int) {
 	return n
 }
 
+func (m *SourceOfFunds) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Source != nil {
+		n += m.Source.Size()
+	}
+	return n
+}
+
+func (m *SourceOfFunds_SubaccountId) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.SubaccountId != nil {
+		l = m.SubaccountId.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	return n
+}
+func (m *SourceOfFunds_Address) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Address)
+	n += 1 + l + sovEvents(uint64(l))
+	return n
+}
 func (m *TransferEventV1) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	l = m.SenderSubaccountId.Size()
-	n += 1 + l + sovEvents(uint64(l))
-	l = m.RecipientSubaccountId.Size()
-	n += 1 + l + sovEvents(uint64(l))
+	if m.SenderSubaccountId != nil {
+		l = m.SenderSubaccountId.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	if m.RecipientSubaccountId != nil {
+		l = m.RecipientSubaccountId.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
 	if m.AssetId != 0 {
 		n += 1 + sovEvents(uint64(m.AssetId))
 	}
 	if m.Amount != 0 {
 		n += 1 + sovEvents(uint64(m.Amount))
+	}
+	if m.Sender != nil {
+		l = m.Sender.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	if m.Recipient != nil {
+		l = m.Recipient.Size()
+		n += 1 + l + sovEvents(uint64(l))
 	}
 	return n
 }
@@ -2226,6 +3592,12 @@ func (m *OrderFillEventV1) Size() (n int) {
 	}
 	if m.TakerFee != 0 {
 		n += 1 + sozEvents(uint64(m.TakerFee))
+	}
+	if m.TotalFilledMaker != 0 {
+		n += 1 + sovEvents(uint64(m.TotalFilledMaker))
+	}
+	if m.TotalFilledTaker != 0 {
+		n += 1 + sovEvents(uint64(m.TotalFilledTaker))
 	}
 	return n
 }
@@ -2329,26 +3701,50 @@ func (m *StatefulOrderEventV1_OrderPlace) Size() (n int) {
 	}
 	return n
 }
-func (m *StatefulOrderEventV1_OrderCancel) Size() (n int) {
+func (m *StatefulOrderEventV1_OrderRemoval) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if m.OrderCancel != nil {
-		l = m.OrderCancel.Size()
+	if m.OrderRemoval != nil {
+		l = m.OrderRemoval.Size()
 		n += 1 + l + sovEvents(uint64(l))
 	}
 	return n
 }
-func (m *StatefulOrderEventV1_OrderExpiration) Size() (n int) {
+func (m *StatefulOrderEventV1_ConditionalOrderPlacement) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if m.OrderExpiration != nil {
-		l = m.OrderExpiration.Size()
+	if m.ConditionalOrderPlacement != nil {
+		l = m.ConditionalOrderPlacement.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	return n
+}
+func (m *StatefulOrderEventV1_ConditionalOrderTriggered) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ConditionalOrderTriggered != nil {
+		l = m.ConditionalOrderTriggered.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	return n
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacement) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.LongTermOrderPlacement != nil {
+		l = m.LongTermOrderPlacement.Size()
 		n += 1 + l + sovEvents(uint64(l))
 	}
 	return n
@@ -2366,28 +3762,196 @@ func (m *StatefulOrderEventV1_StatefulOrderPlacementV1) Size() (n int) {
 	return n
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Size() (n int) {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if m.CanceledOrderId != nil {
-		l = m.CanceledOrderId.Size()
+	if m.RemovedOrderId != nil {
+		l = m.RemovedOrderId.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	if m.Reason != 0 {
+		n += 1 + sovEvents(uint64(m.Reason))
+	}
+	return n
+}
+
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Order != nil {
+		l = m.Order.Size()
 		n += 1 + l + sovEvents(uint64(l))
 	}
 	return n
 }
 
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) Size() (n int) {
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if m.ExpiredOrderId != nil {
-		l = m.ExpiredOrderId.Size()
+	if m.TriggeredOrderId != nil {
+		l = m.TriggeredOrderId.Size()
 		n += 1 + l + sovEvents(uint64(l))
+	}
+	return n
+}
+
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Order != nil {
+		l = m.Order.Size()
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	return n
+}
+
+func (m *AssetCreateEventV1) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Id != 0 {
+		n += 1 + sovEvents(uint64(m.Id))
+	}
+	l = len(m.Symbol)
+	if l > 0 {
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	if m.HasMarket {
+		n += 2
+	}
+	if m.MarketId != 0 {
+		n += 1 + sovEvents(uint64(m.MarketId))
+	}
+	if m.AtomicResolution != 0 {
+		n += 1 + sozEvents(uint64(m.AtomicResolution))
+	}
+	return n
+}
+
+func (m *PerpetualMarketCreateEventV1) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Id != 0 {
+		n += 1 + sovEvents(uint64(m.Id))
+	}
+	if m.ClobPairId != 0 {
+		n += 1 + sovEvents(uint64(m.ClobPairId))
+	}
+	l = len(m.Ticker)
+	if l > 0 {
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	if m.MarketId != 0 {
+		n += 1 + sovEvents(uint64(m.MarketId))
+	}
+	if m.Status != 0 {
+		n += 1 + sovEvents(uint64(m.Status))
+	}
+	if m.QuantumConversionExponent != 0 {
+		n += 1 + sozEvents(uint64(m.QuantumConversionExponent))
+	}
+	if m.AtomicResolution != 0 {
+		n += 1 + sozEvents(uint64(m.AtomicResolution))
+	}
+	if m.SubticksPerTick != 0 {
+		n += 1 + sovEvents(uint64(m.SubticksPerTick))
+	}
+	if m.StepBaseQuantums != 0 {
+		n += 1 + sovEvents(uint64(m.StepBaseQuantums))
+	}
+	if m.LiquidityTier != 0 {
+		n += 1 + sovEvents(uint64(m.LiquidityTier))
+	}
+	return n
+}
+
+func (m *LiquidityTierUpsertEventV1) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Id != 0 {
+		n += 1 + sovEvents(uint64(m.Id))
+	}
+	l = len(m.Name)
+	if l > 0 {
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	if m.InitialMarginPpm != 0 {
+		n += 1 + sovEvents(uint64(m.InitialMarginPpm))
+	}
+	if m.MaintenanceFractionPpm != 0 {
+		n += 1 + sovEvents(uint64(m.MaintenanceFractionPpm))
+	}
+	if m.BasePositionNotional != 0 {
+		n += 1 + sovEvents(uint64(m.BasePositionNotional))
+	}
+	return n
+}
+
+func (m *UpdateClobPairEventV1) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ClobPairId != 0 {
+		n += 1 + sovEvents(uint64(m.ClobPairId))
+	}
+	if m.Status != 0 {
+		n += 1 + sovEvents(uint64(m.Status))
+	}
+	if m.QuantumConversionExponent != 0 {
+		n += 1 + sozEvents(uint64(m.QuantumConversionExponent))
+	}
+	if m.SubticksPerTick != 0 {
+		n += 1 + sovEvents(uint64(m.SubticksPerTick))
+	}
+	if m.StepBaseQuantums != 0 {
+		n += 1 + sovEvents(uint64(m.StepBaseQuantums))
+	}
+	return n
+}
+
+func (m *UpdatePerpetualEventV1) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Id != 0 {
+		n += 1 + sovEvents(uint64(m.Id))
+	}
+	l = len(m.Ticker)
+	if l > 0 {
+		n += 1 + l + sovEvents(uint64(l))
+	}
+	if m.MarketId != 0 {
+		n += 1 + sovEvents(uint64(m.MarketId))
+	}
+	if m.AtomicResolution != 0 {
+		n += 1 + sozEvents(uint64(m.AtomicResolution))
+	}
+	if m.LiquidityTier != 0 {
+		n += 1 + sovEvents(uint64(m.LiquidityTier))
 	}
 	return n
 }
@@ -3159,6 +4723,123 @@ func (m *MarketModifyEventV1) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *SourceOfFunds) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SourceOfFunds: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SourceOfFunds: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SubaccountId", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &v1.IndexerSubaccountId{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Source = &SourceOfFunds_SubaccountId{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Address", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Source = &SourceOfFunds_Address{string(dAtA[iNdEx:postIndex])}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *TransferEventV1) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -3217,6 +4898,9 @@ func (m *TransferEventV1) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
+			if m.SenderSubaccountId == nil {
+				m.SenderSubaccountId = &v1.IndexerSubaccountId{}
+			}
 			if err := m.SenderSubaccountId.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -3249,6 +4933,9 @@ func (m *TransferEventV1) Unmarshal(dAtA []byte) error {
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
+			}
+			if m.RecipientSubaccountId == nil {
+				m.RecipientSubaccountId = &v1.IndexerSubaccountId{}
 			}
 			if err := m.RecipientSubaccountId.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -3292,6 +4979,78 @@ func (m *TransferEventV1) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sender", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Sender == nil {
+				m.Sender = &SourceOfFunds{}
+			}
+			if err := m.Sender.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Recipient", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Recipient == nil {
+				m.Recipient = &SourceOfFunds{}
+			}
+			if err := m.Recipient.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipEvents(dAtA[iNdEx:])
@@ -3506,6 +5265,44 @@ func (m *OrderFillEventV1) Unmarshal(dAtA []byte) error {
 			}
 			v = (v >> 1) ^ uint64((int64(v&1)<<63)>>63)
 			m.TakerFee = int64(v)
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TotalFilledMaker", wireType)
+			}
+			m.TotalFilledMaker = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.TotalFilledMaker |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TotalFilledTaker", wireType)
+			}
+			m.TotalFilledTaker = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.TotalFilledTaker |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipEvents(dAtA[iNdEx:])
@@ -3924,9 +5721,9 @@ func (m *StatefulOrderEventV1) Unmarshal(dAtA []byte) error {
 			}
 			m.Event = &StatefulOrderEventV1_OrderPlace{v}
 			iNdEx = postIndex
-		case 2:
+		case 4:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field OrderCancel", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field OrderRemoval", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -3953,15 +5750,15 @@ func (m *StatefulOrderEventV1) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			v := &StatefulOrderEventV1_StatefulOrderCancelationV1{}
+			v := &StatefulOrderEventV1_StatefulOrderRemovalV1{}
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Event = &StatefulOrderEventV1_OrderCancel{v}
+			m.Event = &StatefulOrderEventV1_OrderRemoval{v}
 			iNdEx = postIndex
-		case 3:
+		case 5:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field OrderExpiration", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field ConditionalOrderPlacement", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -3988,11 +5785,81 @@ func (m *StatefulOrderEventV1) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			v := &StatefulOrderEventV1_StatefulOrderExpirationV1{}
+			v := &StatefulOrderEventV1_ConditionalOrderPlacementV1{}
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Event = &StatefulOrderEventV1_OrderExpiration{v}
+			m.Event = &StatefulOrderEventV1_ConditionalOrderPlacement{v}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConditionalOrderTriggered", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &StatefulOrderEventV1_ConditionalOrderTriggeredV1{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Event = &StatefulOrderEventV1_ConditionalOrderTriggered{v}
+			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LongTermOrderPlacement", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &StatefulOrderEventV1_LongTermOrderPlacementV1{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Event = &StatefulOrderEventV1_LongTermOrderPlacement{v}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -4101,7 +5968,7 @@ func (m *StatefulOrderEventV1_StatefulOrderPlacementV1) Unmarshal(dAtA []byte) e
 	}
 	return nil
 }
-func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Unmarshal(dAtA []byte) error {
+func (m *StatefulOrderEventV1_StatefulOrderRemovalV1) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -4124,15 +5991,15 @@ func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Unmarshal(dAtA []byte)
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StatefulOrderCancelationV1: wiretype end group for non-group")
+			return fmt.Errorf("proto: StatefulOrderRemovalV1: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StatefulOrderCancelationV1: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: StatefulOrderRemovalV1: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field CanceledOrderId", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field RemovedOrderId", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -4159,10 +6026,115 @@ func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Unmarshal(dAtA []byte)
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if m.CanceledOrderId == nil {
-				m.CanceledOrderId = &v1.IndexerOrderId{}
+			if m.RemovedOrderId == nil {
+				m.RemovedOrderId = &v1.IndexerOrderId{}
 			}
-			if err := m.CanceledOrderId.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.RemovedOrderId.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Reason", wireType)
+			}
+			m.Reason = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Reason |= shared.OrderRemovalReason(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StatefulOrderEventV1_ConditionalOrderPlacementV1) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ConditionalOrderPlacementV1: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ConditionalOrderPlacementV1: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Order", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Order == nil {
+				m.Order = &v1.IndexerOrder{}
+			}
+			if err := m.Order.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -4187,7 +6159,7 @@ func (m *StatefulOrderEventV1_StatefulOrderCancelationV1) Unmarshal(dAtA []byte)
 	}
 	return nil
 }
-func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) Unmarshal(dAtA []byte) error {
+func (m *StatefulOrderEventV1_ConditionalOrderTriggeredV1) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -4210,15 +6182,15 @@ func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) Unmarshal(dAtA []byte) 
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StatefulOrderExpirationV1: wiretype end group for non-group")
+			return fmt.Errorf("proto: ConditionalOrderTriggeredV1: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StatefulOrderExpirationV1: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: ConditionalOrderTriggeredV1: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ExpiredOrderId", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field TriggeredOrderId", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -4245,13 +6217,982 @@ func (m *StatefulOrderEventV1_StatefulOrderExpirationV1) Unmarshal(dAtA []byte) 
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if m.ExpiredOrderId == nil {
-				m.ExpiredOrderId = &v1.IndexerOrderId{}
+			if m.TriggeredOrderId == nil {
+				m.TriggeredOrderId = &v1.IndexerOrderId{}
 			}
-			if err := m.ExpiredOrderId.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.TriggeredOrderId.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StatefulOrderEventV1_LongTermOrderPlacementV1) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LongTermOrderPlacementV1: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LongTermOrderPlacementV1: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Order", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Order == nil {
+				m.Order = &v1.IndexerOrder{}
+			}
+			if err := m.Order.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AssetCreateEventV1) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AssetCreateEventV1: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AssetCreateEventV1: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			m.Id = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Id |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Symbol", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Symbol = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field HasMarket", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.HasMarket = bool(v != 0)
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MarketId", wireType)
+			}
+			m.MarketId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MarketId |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AtomicResolution", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			v = int32((uint32(v) >> 1) ^ uint32(((v&1)<<31)>>31))
+			m.AtomicResolution = v
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PerpetualMarketCreateEventV1) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PerpetualMarketCreateEventV1: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PerpetualMarketCreateEventV1: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			m.Id = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Id |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClobPairId", wireType)
+			}
+			m.ClobPairId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ClobPairId |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ticker", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Ticker = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MarketId", wireType)
+			}
+			m.MarketId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MarketId |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
+			}
+			m.Status = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Status |= v1.ClobPairStatus(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field QuantumConversionExponent", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			v = int32((uint32(v) >> 1) ^ uint32(((v&1)<<31)>>31))
+			m.QuantumConversionExponent = v
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AtomicResolution", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			v = int32((uint32(v) >> 1) ^ uint32(((v&1)<<31)>>31))
+			m.AtomicResolution = v
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SubticksPerTick", wireType)
+			}
+			m.SubticksPerTick = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SubticksPerTick |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StepBaseQuantums", wireType)
+			}
+			m.StepBaseQuantums = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StepBaseQuantums |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 10:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LiquidityTier", wireType)
+			}
+			m.LiquidityTier = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.LiquidityTier |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *LiquidityTierUpsertEventV1) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LiquidityTierUpsertEventV1: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LiquidityTierUpsertEventV1: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			m.Id = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Id |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Name = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field InitialMarginPpm", wireType)
+			}
+			m.InitialMarginPpm = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.InitialMarginPpm |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaintenanceFractionPpm", wireType)
+			}
+			m.MaintenanceFractionPpm = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaintenanceFractionPpm |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BasePositionNotional", wireType)
+			}
+			m.BasePositionNotional = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.BasePositionNotional |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *UpdateClobPairEventV1) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: UpdateClobPairEventV1: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: UpdateClobPairEventV1: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClobPairId", wireType)
+			}
+			m.ClobPairId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ClobPairId |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
+			}
+			m.Status = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Status |= v1.ClobPairStatus(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field QuantumConversionExponent", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			v = int32((uint32(v) >> 1) ^ uint32(((v&1)<<31)>>31))
+			m.QuantumConversionExponent = v
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SubticksPerTick", wireType)
+			}
+			m.SubticksPerTick = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SubticksPerTick |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StepBaseQuantums", wireType)
+			}
+			m.StepBaseQuantums = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StepBaseQuantums |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipEvents(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *UpdatePerpetualEventV1) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowEvents
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: UpdatePerpetualEventV1: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: UpdatePerpetualEventV1: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			m.Id = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Id |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ticker", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthEvents
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthEvents
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Ticker = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MarketId", wireType)
+			}
+			m.MarketId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MarketId |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AtomicResolution", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			v = int32((uint32(v) >> 1) ^ uint32(((v&1)<<31)>>31))
+			m.AtomicResolution = v
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LiquidityTier", wireType)
+			}
+			m.LiquidityTier = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.LiquidityTier |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipEvents(dAtA[iNdEx:])

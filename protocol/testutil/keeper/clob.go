@@ -1,11 +1,21 @@
 package keeper
 
 import (
-	"github.com/dydxprotocol/v4/x/clob/rate_limit"
 	"testing"
 
-	"github.com/dydxprotocol/v4/indexer/indexer_manager"
-	"github.com/dydxprotocol/v4/testutil/constants"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	clobtest "github.com/dydxprotocol/v4-chain/protocol/testutil/clob"
+	delaymsgmoduletypes "github.com/dydxprotocol/v4-chain/protocol/x/delaymsg/types"
+	"github.com/stretchr/testify/require"
+
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/rate_limit"
+
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
 
 	db "github.com/cometbft/cometbft-db"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -13,14 +23,17 @@ import (
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	asskeeper "github.com/dydxprotocol/v4/x/assets/keeper"
-	"github.com/dydxprotocol/v4/x/clob/keeper"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	feetierskeeper "github.com/dydxprotocol/v4/x/feetiers/keeper"
-	perpkeeper "github.com/dydxprotocol/v4/x/perpetuals/keeper"
-	priceskeeper "github.com/dydxprotocol/v4/x/prices/keeper"
-	statskeeper "github.com/dydxprotocol/v4/x/stats/keeper"
-	subkeeper "github.com/dydxprotocol/v4/x/subaccounts/keeper"
+	asskeeper "github.com/dydxprotocol/v4-chain/protocol/x/assets/keeper"
+	blocktimekeeper "github.com/dydxprotocol/v4-chain/protocol/x/blocktime/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	feetierskeeper "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/keeper"
+	perpkeeper "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/keeper"
+	priceskeeper "github.com/dydxprotocol/v4-chain/protocol/x/prices/keeper"
+	rewardskeeper "github.com/dydxprotocol/v4-chain/protocol/x/rewards/keeper"
+	statskeeper "github.com/dydxprotocol/v4-chain/protocol/x/stats/keeper"
+	subkeeper "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/keeper"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 type ClobKeepersTestContext struct {
@@ -28,12 +41,15 @@ type ClobKeepersTestContext struct {
 	ClobKeeper        *keeper.Keeper
 	PricesKeeper      *priceskeeper.Keeper
 	AssetsKeeper      *asskeeper.Keeper
+	BlockTimeKeeper   *blocktimekeeper.Keeper
 	FeeTiersKeeper    *feetierskeeper.Keeper
 	PerpetualsKeeper  *perpkeeper.Keeper
 	StatsKeeper       *statskeeper.Keeper
+	RewardsKeeper     *rewardskeeper.Keeper
 	SubaccountsKeeper *subkeeper.Keeper
 	StoreKey          storetypes.StoreKey
 	MemKey            storetypes.StoreKey
+	Cdc               *codec.ProtoCodec
 }
 
 func NewClobKeepersTestContext(
@@ -56,6 +72,7 @@ func NewClobKeepersTestContextWithUninitializedMemStore(
 	bankKeeper bankkeeper.Keeper,
 	indexerEventManager indexer_manager.IndexerEventManager,
 ) (ks ClobKeepersTestContext) {
+	var mockTimeProvider *mocks.TimeProvider
 	ks.Ctx = initKeepers(t, func(
 		db *db.MemDB,
 		registry codectypes.InterfaceRegistry,
@@ -64,7 +81,9 @@ func NewClobKeepersTestContextWithUninitializedMemStore(
 		indexerEventsTransientStoreKey storetypes.StoreKey,
 	) []GenesisInitializer {
 		// Define necessary keepers here for unit tests
-		ks.PricesKeeper, _, _, _, _ = createPricesKeeper(stateStore, db, cdc, indexerEventsTransientStoreKey)
+		ks.PricesKeeper, _, _, _, mockTimeProvider = createPricesKeeper(stateStore, db, cdc, indexerEventsTransientStoreKey)
+		// Mock time provider response for market creation.
+		mockTimeProvider.On("Now").Return(constants.TimeT)
 		epochsKeeper, _ := createEpochsKeeper(stateStore, db, cdc)
 		ks.PerpetualsKeeper, _ = createPerpetualsKeeper(
 			stateStore,
@@ -74,7 +93,15 @@ func NewClobKeepersTestContextWithUninitializedMemStore(
 			epochsKeeper,
 			indexerEventsTransientStoreKey,
 		)
-		ks.AssetsKeeper, _ = createAssetsKeeper(stateStore, db, cdc, ks.PricesKeeper)
+		ks.AssetsKeeper, _ = createAssetsKeeper(
+			stateStore,
+			db,
+			cdc,
+			ks.PricesKeeper,
+			indexerEventsTransientStoreKey,
+			true,
+		)
+		ks.BlockTimeKeeper, _ = createBlockTimeKeeper(stateStore, db, cdc)
 		ks.StatsKeeper, _ = createStatsKeeper(
 			stateStore,
 			epochsKeeper,
@@ -84,6 +111,15 @@ func NewClobKeepersTestContextWithUninitializedMemStore(
 		ks.FeeTiersKeeper, _ = createFeeTiersKeeper(
 			stateStore,
 			ks.StatsKeeper,
+			db,
+			cdc,
+		)
+		ks.RewardsKeeper, _ = createRewardsKeeper(
+			stateStore,
+			ks.AssetsKeeper,
+			bankKeeper,
+			ks.FeeTiersKeeper,
+			ks.PricesKeeper,
 			db,
 			cdc,
 		)
@@ -103,14 +139,17 @@ func NewClobKeepersTestContextWithUninitializedMemStore(
 			cdc,
 			memClob,
 			ks.AssetsKeeper,
+			ks.BlockTimeKeeper,
 			bankKeeper,
 			ks.FeeTiersKeeper,
 			ks.PerpetualsKeeper,
 			ks.StatsKeeper,
+			ks.RewardsKeeper,
 			ks.SubaccountsKeeper,
 			indexerEventManager,
 			indexerEventsTransientStoreKey,
 		)
+		ks.Cdc = cdc
 
 		return []GenesisInitializer{
 			ks.PricesKeeper,
@@ -123,6 +162,10 @@ func NewClobKeepersTestContextWithUninitializedMemStore(
 		}
 	})
 
+	if err := ks.ClobKeeper.InitializeEquityTierLimit(ks.Ctx, types.EquityTierLimitConfiguration{}); err != nil {
+		panic(err)
+	}
+
 	return ks
 }
 
@@ -132,10 +175,12 @@ func createClobKeeper(
 	cdc *codec.ProtoCodec,
 	memClob types.MemClob,
 	aKeeper *asskeeper.Keeper,
+	blockTimeKeeper types.BlockTimeKeeper,
 	bankKeeper types.BankKeeper,
 	feeTiersKeeper types.FeeTiersKeeper,
 	perpKeeper *perpkeeper.Keeper,
 	statsKeeper *statskeeper.Keeper,
+	rewardsKeeper types.RewardsKeeper,
 	saKeeper *subkeeper.Keeper,
 	indexerEventManager indexer_manager.IndexerEventManager,
 	indexerEventsTransientStoreKey storetypes.StoreKey,
@@ -143,7 +188,6 @@ func createClobKeeper(
 	storeKey := sdk.NewKVStoreKey(types.StoreKey)
 	memKey := storetypes.NewMemoryStoreKey(types.MemStoreKey)
 	transientStoreKey := sdk.NewTransientStoreKey(types.TransientStoreKey)
-	untriggeredConditionalOrders := make(map[types.ClobPairId]keeper.UntriggeredConditionalOrders)
 
 	stateStore.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, db)
 	stateStore.MountStoreWithDB(memKey, storetypes.StoreTypeMemory, db)
@@ -154,22 +198,107 @@ func createClobKeeper(
 		storeKey,
 		memKey,
 		transientStoreKey,
+		[]string{
+			authtypes.NewModuleAddress(delaymsgmoduletypes.ModuleName).String(),
+			authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		},
 		memClob,
-		untriggeredConditionalOrders,
 		saKeeper,
 		aKeeper,
+		blockTimeKeeper,
 		bankKeeper,
 		feeTiersKeeper,
 		perpKeeper,
 		statsKeeper,
+		rewardsKeeper,
 		indexerEventManager,
 		constants.TestEncodingCfg.TxConfig.TxDecoder(),
-		"",
-		"",
+		flags.GetDefaultClobFlags(),
 		rate_limit.NewNoOpRateLimiter[*types.MsgPlaceOrder](),
 		rate_limit.NewNoOpRateLimiter[*types.MsgCancelOrder](),
 	)
 	k.SetAnteHandler(constants.EmptyAnteHandler)
 
 	return k, storeKey, memKey
+}
+
+func CreateTestClobPairs(
+	t *testing.T,
+	ctx sdk.Context,
+	clobKeeper *keeper.Keeper,
+	clobPairs []types.ClobPair,
+) {
+	for _, clobPair := range clobPairs {
+		_, err := clobKeeper.CreatePerpetualClobPair(
+			ctx,
+			clobPair.Id,
+			clobPair.MustGetPerpetualId(),
+			satypes.BaseQuantums(clobPair.StepBaseQuantums),
+			clobPair.QuantumConversionExponent,
+			clobPair.SubticksPerTick,
+			clobPair.Status,
+		)
+		require.NoError(t, err)
+	}
+}
+
+func CreateNClobPair(
+	t *testing.T,
+	keeper *keeper.Keeper,
+	perpKeeper *perpkeeper.Keeper,
+	pricesKeeper *priceskeeper.Keeper,
+	ctx sdk.Context,
+	n int,
+	mockIndexerEventManager *mocks.IndexerEventManager,
+) []types.ClobPair {
+	perps := CreateLiquidityTiersAndNPerpetuals(t, ctx, perpKeeper, pricesKeeper, n)
+
+	items := make([]types.ClobPair, n)
+	for i := range items {
+		items[i].Id = uint32(i)
+		items[i].Metadata = &types.ClobPair_PerpetualClobMetadata{
+			PerpetualClobMetadata: &types.PerpetualClobMetadata{
+				PerpetualId: uint32(i),
+			},
+		}
+		items[i].SubticksPerTick = 5
+		items[i].StepBaseQuantums = 5
+		items[i].Status = types.ClobPair_STATUS_ACTIVE
+
+		// PerpetualMarketCreateEvents are emitted when initializing the genesis state, so we need to mock
+		// the indexer event manager to expect these events.
+		mockIndexerEventManager.On("AddTxnEvent",
+			ctx,
+			indexerevents.SubtypePerpetualMarket,
+			indexerevents.PerpetualMarketEventVersion,
+			indexer_manager.GetBytes(
+				indexerevents.NewPerpetualMarketCreateEvent(
+					clobtest.MustPerpetualId(items[i]),
+					items[i].Id,
+					perps[i].Params.Ticker,
+					perps[i].Params.MarketId,
+					items[i].Status,
+					items[i].QuantumConversionExponent,
+					perps[i].Params.AtomicResolution,
+					items[i].SubticksPerTick,
+					items[i].StepBaseQuantums,
+					perps[i].Params.LiquidityTier,
+				),
+			),
+		).Return()
+
+		_, err := keeper.CreatePerpetualClobPair(
+			ctx,
+			items[i].Id,
+			clobtest.MustPerpetualId(items[i]),
+			satypes.BaseQuantums(items[i].StepBaseQuantums),
+			items[i].QuantumConversionExponent,
+			items[i].SubticksPerTick,
+			items[i].Status,
+		)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return items
 }

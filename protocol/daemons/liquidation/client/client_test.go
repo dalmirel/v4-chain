@@ -3,19 +3,21 @@ package client_test
 import (
 	"context"
 	"errors"
+	appflags "github.com/dydxprotocol/v4-chain/protocol/app/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/appoptions"
 	"testing"
 
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cosmos/cosmos-sdk/types/query"
-	d_constants "github.com/dydxprotocol/v4/daemons/constants"
-	"github.com/dydxprotocol/v4/daemons/flags"
-	"github.com/dydxprotocol/v4/daemons/liquidation/api"
-	"github.com/dydxprotocol/v4/daemons/liquidation/client"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/grpc"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	d_constants "github.com/dydxprotocol/v4-chain/protocol/daemons/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/liquidation/api"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/liquidation/client"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/grpc"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -31,6 +33,7 @@ func TestStart_TcpConnectionFails(t *testing.T) {
 		client.Start(
 			grpc.Ctx,
 			flags.GetDefaultDaemonFlags(),
+			appflags.GetFlagValuesFromOptions(appoptions.GetDefaultTestAppOptions("", nil)),
 			log.NewNopLogger(),
 			mockGrpcClient,
 		),
@@ -54,6 +57,7 @@ func TestStart_UnixSocketConnectionFails(t *testing.T) {
 		client.Start(
 			grpc.Ctx,
 			flags.GetDefaultDaemonFlags(),
+			appflags.GetFlagValuesFromOptions(appoptions.GetDefaultTestAppOptions("", nil)),
 			log.NewNopLogger(),
 			mockGrpcClient,
 		),

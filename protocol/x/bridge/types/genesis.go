@@ -1,7 +1,7 @@
 package types
 
 import (
-	"github.com/dydxprotocol/v4/lib"
+	"time"
 )
 
 // DefaultGenesis returns the default bridge genesis state.
@@ -9,20 +9,23 @@ func DefaultGenesis() *GenesisState {
 	return &GenesisState{
 		EventParams: EventParams{
 			Denom:      "bridge-token",
-			EthChainId: 0,
-			EthAddress: "0x0000000000000000000000000000000000000000",
+			EthChainId: 11155111,
+			EthAddress: "0xEf01c3A30eB57c91c40C52E996d29c202ae72193",
 		},
 		ProposeParams: ProposeParams{
 			MaxBridgesPerBlock:           10,
-			ProposeDelayDuration:         lib.MustParseDuration("60s"),
+			ProposeDelayDuration:         60 * time.Second,
 			SkipRatePpm:                  800_000, // 80%
-			SkipIfBlockDelayedByDuration: lib.MustParseDuration("5s"),
+			SkipIfBlockDelayedByDuration: 5 * time.Second,
 		},
 		SafetyParams: SafetyParams{
 			IsDisabled:  false,
 			DelayBlocks: 86_400, // Seconds in a day
 		},
-		NextAcknowledgedEventId: 0,
+		AcknowledgedEventInfo: BridgeEventInfo{
+			NextId:         0,
+			EthBlockHeight: 0,
+		},
 	}
 }
 
@@ -36,6 +39,9 @@ func (gs GenesisState) Validate() error {
 		return err
 	}
 	if err := gs.SafetyParams.Validate(); err != nil {
+		return err
+	}
+	if err := gs.AcknowledgedEventInfo.Validate(); err != nil {
 		return err
 	}
 

@@ -18,10 +18,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	liquidationtypes "github.com/dydxprotocol/v4/daemons/server/types/liquidations"
-	"github.com/dydxprotocol/v4/x/clob/client/cli"
-	"github.com/dydxprotocol/v4/x/clob/keeper"
-	"github.com/dydxprotocol/v4/x/clob/types"
+	liquidationtypes "github.com/dydxprotocol/v4-chain/protocol/daemons/server/types/liquidations"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/client/cli"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 )
 
 var (
@@ -108,7 +108,6 @@ type AppModule struct {
 	accountKeeper             types.AccountKeeper
 	bankKeeper                types.BankKeeper
 	subaccountsKeeper         types.SubaccountsKeeper
-	memClob                   types.MemClob
 	liquidatableSubaccountIds *liquidationtypes.LiquidatableSubaccountIds
 }
 
@@ -118,7 +117,6 @@ func NewAppModule(
 	accountKeeper types.AccountKeeper,
 	bankKeeper types.BankKeeper,
 	subaccountsKeeper types.SubaccountsKeeper,
-	memClob types.MemClob,
 	liquidatableSubaccountIds *liquidationtypes.LiquidatableSubaccountIds,
 ) AppModule {
 	return AppModule{
@@ -127,7 +125,6 @@ func NewAppModule(
 		accountKeeper:             accountKeeper,
 		bankKeeper:                bankKeeper,
 		subaccountsKeeper:         subaccountsKeeper,
-		memClob:                   memClob,
 		liquidatableSubaccountIds: liquidatableSubaccountIds,
 	}
 }
@@ -196,8 +193,7 @@ func (am AppModule) Commit(ctx sdk.Context) {
 	defer telemetry.ModuleMeasureSince(am.Name(), time.Now(), telemetry.MetricKeyCommit)
 	PrepareCheckState(
 		ctx,
-		*am.keeper,
-		am.memClob,
+		am.keeper,
 		am.liquidatableSubaccountIds,
 	)
 }

@@ -7,18 +7,16 @@ import (
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banksim "github.com/cosmos/cosmos-sdk/x/bank/simulation"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/dydxprotocol/v4/lib"
-	testutil_rand "github.com/dydxprotocol/v4/testutil/rand"
-	"github.com/dydxprotocol/v4/testutil/sim_helpers"
-	asstypes "github.com/dydxprotocol/v4/x/assets/types"
-	"github.com/dydxprotocol/v4/x/subaccounts/simulation"
-	"github.com/dydxprotocol/v4/x/subaccounts/types"
+	testutil_rand "github.com/dydxprotocol/v4-chain/protocol/testutil/rand"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/sim_helpers"
+	asstypes "github.com/dydxprotocol/v4-chain/protocol/x/assets/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/simulation"
+	"github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +43,7 @@ func TestRandomizedGenState(t *testing.T) {
 		banksim.RandomizedGenState(&simState)
 		simulation.RandomizedGenState(&simState)
 
-		totalUsdcSupply := sdk.NewInt(0)
+		totalUsdcSupply := sdkmath.NewInt(0)
 
 		var saGenesis types.GenesisState
 		simState.Cdc.MustUnmarshalJSON(simState.GenState[types.ModuleName], &saGenesis)
@@ -63,9 +61,9 @@ func TestRandomizedGenState(t *testing.T) {
 				require.Len(t, sa.GetAssetPositions(), 1)
 
 				onlyAssetPosition := sa.GetAssetPositions()[0]
-				require.True(t, onlyAssetPosition.AssetId == lib.UsdcAssetId)
+				require.True(t, onlyAssetPosition.AssetId == asstypes.AssetUsdc.Id)
 
-				bigQuantums := sdk.NewIntFromBigInt(onlyAssetPosition.GetBigQuantums())
+				bigQuantums := sdkmath.NewIntFromBigInt(onlyAssetPosition.GetBigQuantums())
 				totalUsdcSupply = totalUsdcSupply.Add(bigQuantums)
 			}
 

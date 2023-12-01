@@ -2,18 +2,19 @@ package clob
 
 import (
 	"fmt"
-	"sort"
+	"time"
 
+	gometrics "github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	liquidationtypes "github.com/dydxprotocol/v4/daemons/server/types/liquidations"
-	indexerevents "github.com/dydxprotocol/v4/indexer/events"
-	"github.com/dydxprotocol/v4/indexer/indexer_manager"
-	"github.com/dydxprotocol/v4/indexer/off_chain_updates"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/lib/metrics"
-	"github.com/dydxprotocol/v4/x/clob/keeper"
-	"github.com/dydxprotocol/v4/x/clob/types"
+	liquidationtypes "github.com/dydxprotocol/v4-chain/protocol/daemons/server/types/liquidations"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	indexershared "github.com/dydxprotocol/v4-chain/protocol/indexer/shared"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 )
 
 // BeginBlocker executes all ABCI BeginBlock logic respective to the clob module.
@@ -37,50 +38,9 @@ func EndBlocker(
 	keeper keeper.Keeper,
 ) {
 	processProposerMatchesEvents := keeper.GetProcessProposerMatchesEvents(ctx)
-	previousBlockStatefulOrderCancellations := processProposerMatchesEvents.GetPlacedStatefulCancellations()
-
-	// Create a set of placed stateful cancellations by `OrderId`.
-	placedStatefulCancellationOrderIds := lib.SliceToSet(previousBlockStatefulOrderCancellations)
-	// Create a set of removed stateful orders by `OrderId`.
-	removedStatefulOrderIds := lib.SliceToSet(processProposerMatchesEvents.RemovedStatefulOrderIds)
-
-	// Retrieve the fill amounts for all orders which were filled in the last block, and populate
-	// the `offchainUpdates` with updates for the fill amounts.
-	offchainUpdates := types.NewOffchainUpdates()
-	for _, orderId := range processProposerMatchesEvents.OrdersIdsFilledInLastBlock {
-		// Skip sending order updates for orders that have been cancelled / removed since they have been
-		// already removed from state.
-		_, cancelled := placedStatefulCancellationOrderIds[orderId]
-		_, removed := removedStatefulOrderIds[orderId]
-		if cancelled || removed {
-			continue
-		}
-
-		exists, fillAmount, _ := keeper.GetOrderFillAmount(ctx, orderId)
-		if !exists {
-			ctx.Logger().Error(
-				fmt.Sprintf(
-					"EndBlocker: order fill amount does not exist in state for Indexer event for orderId %v",
-					orderId,
-				),
-			)
-			continue
-		}
-
-		if message, success := off_chain_updates.CreateOrderUpdateMessage(
-			ctx.Logger(),
-			orderId,
-			fillAmount,
-		); success {
-			offchainUpdates.AddUpdateMessage(orderId, message)
-		}
-	}
 
 	// Prune any fill amounts from state which are now past their `pruneableBlockHeight`.
 	keeper.PruneStateFillAmountsForShortTermOrders(ctx)
-
-	// Update the block time of the previously committed block.
-	keeper.SetBlockTimeForLastCommittedBlock(ctx)
 
 	// Prune expired stateful orders completely from state.
 	expiredStatefulOrderIds := keeper.RemoveExpiredStatefulOrdersTimeSlices(ctx, ctx.BlockTime())
@@ -95,37 +55,79 @@ func EndBlocker(
 		keeper.GetIndexerEventManager().AddTxnEvent(
 			ctx,
 			indexerevents.SubtypeStatefulOrder,
-			indexer_manager.GetB64EncodedEventMessage(
-				indexerevents.NewStatefulOrderExpirationEvent(
+			indexerevents.StatefulOrderEventVersion,
+			indexer_manager.GetBytes(
+				indexerevents.NewStatefulOrderRemovalEvent(
 					orderId,
+					indexershared.OrderRemovalReason_ORDER_REMOVAL_REASON_EXPIRED,
 				),
 			),
 		)
-		telemetry.IncrCounter(1, types.ModuleName, metrics.Expired, metrics.StatefulOrderRemoved, metrics.Count)
+		telemetry.IncrCounterWithLabels(
+			[]string{types.ModuleName, metrics.Expired, metrics.StatefulOrderRemoved, metrics.Count},
+			1,
+			orderId.GetOrderIdLabels(),
+		)
 	}
+
+	// Prune expired untriggered conditional orders from the in-memory UntriggeredConditionalOrders struct.
+	keeper.PruneUntriggeredConditionalOrders(
+		expiredStatefulOrderIds,
+		processProposerMatchesEvents.PlacedStatefulCancellationOrderIds,
+	)
 
 	// Update the memstore with expired order ids.
 	// These expired stateful order ids will be purged from the memclob in `Commit`.
 	processProposerMatchesEvents.ExpiredStatefulOrderIds = expiredStatefulOrderIds
+
+	// Before triggering conditional orders, add newly-placed conditional orders to the clob keeper's
+	// in-memory UntriggeredConditionalOrders data structure to allow conditional orders to
+	// trigger in the same block they are placed. Skip triggering orders which have been cancelled
+	// or expired.
+	// TODO(CLOB-773) Support conditional order replacements. Ensure replacements are de-duplicated.
+	keeper.AddUntriggeredConditionalOrders(
+		ctx,
+		processProposerMatchesEvents.PlacedConditionalOrderIds,
+		lib.UniqueSliceToSet(processProposerMatchesEvents.GetPlacedStatefulCancellationOrderIds()),
+		lib.UniqueSliceToSet(expiredStatefulOrderIds),
+	)
+
+	// Poll out all triggered conditional orders from `UntriggeredConditionalOrders` and update state.
+	triggeredConditionalOrderIds := keeper.MaybeTriggerConditionalOrders(ctx)
+	// Update the memstore with conditional order ids triggered in the last block.
+	// These triggered conditional orders will be placed in the `PrepareCheckState``.
+	processProposerMatchesEvents.ConditionalOrderIdsTriggeredInLastBlock = triggeredConditionalOrderIds
+
+	// Write the ProcessProposerMatchcesEvents with all the EndBlocker updates to state.
 	keeper.MustSetProcessProposerMatchesEvents(
 		ctx,
 		processProposerMatchesEvents,
 	)
 
-	// Send all off-chain Indexer updates with these new fill amounts.
-	keeper.SendOffchainMessages(offchainUpdates, nil, metrics.SendPrepareCheckStateOffchainUpdates)
-
 	// Prune any rate limiting information that is no longer relevant.
 	keeper.PruneRateLimits(ctx)
+
+	// Emit relevant metrics at the end of every block.
+	telemetry.SetGaugeWithLabels(
+		[]string{metrics.InsuranceFundBalance},
+		metrics.GetMetricValueFromBigInt(keeper.GetInsuranceFundBalance(ctx)),
+		[]gometrics.Label{},
+	)
 }
 
 // PrepareCheckState executes all ABCI PrepareCheckState logic respective to the clob module.
 func PrepareCheckState(
 	ctx sdk.Context,
-	keeper keeper.Keeper,
-	memClob types.MemClob,
+	keeper *keeper.Keeper,
 	liquidatableSubaccountIds *liquidationtypes.LiquidatableSubaccountIds,
 ) {
+	defer telemetry.MeasureSince(
+		time.Now(),
+		types.ModuleName,
+		metrics.ClobPrepareCheckState,
+		metrics.Latency,
+	)
+
 	// Get the events generated from processing the matches in the latest block.
 	processProposerMatchesEvents := keeper.GetProcessProposerMatchesEvents(ctx)
 	if ctx.BlockHeight() != int64(processProposerMatchesEvents.BlockHeight) {
@@ -139,8 +141,8 @@ func PrepareCheckState(
 	}
 
 	// 1. Remove all operations in the local validators operations queue from the memclob.
-	localValidatorOperationsQueue, shortTermOrderTxBytes := memClob.GetOperationsToReplay(ctx)
-	ctx.Logger().Debug(
+	localValidatorOperationsQueue, shortTermOrderTxBytes := keeper.MemClob.GetOperationsToReplay(ctx)
+	keeper.Logger(ctx).Debug(
 		"Clearing local operations queue",
 		"localValidatorOperationsQueue",
 		types.GetInternalOperationsQueueTextString(localValidatorOperationsQueue),
@@ -148,28 +150,50 @@ func PrepareCheckState(
 		ctx.BlockHeight(),
 	)
 
-	memClob.RemoveAndClearOperationsQueue(ctx, localValidatorOperationsQueue)
+	keeper.MemClob.RemoveAndClearOperationsQueue(ctx, localValidatorOperationsQueue)
 
 	// 2. Purge invalid state from the memclob.
 	offchainUpdates := types.NewOffchainUpdates()
-	offchainUpdates = memClob.PurgeInvalidMemclobState(
+	offchainUpdates = keeper.MemClob.PurgeInvalidMemclobState(
 		ctx,
-		processProposerMatchesEvents.OrdersIdsFilledInLastBlock,
+		processProposerMatchesEvents.OrderIdsFilledInLastBlock,
 		processProposerMatchesEvents.ExpiredStatefulOrderIds,
-		processProposerMatchesEvents.PlacedStatefulCancellations,
+		processProposerMatchesEvents.PlacedStatefulCancellationOrderIds,
 		processProposerMatchesEvents.RemovedStatefulOrderIds,
 		offchainUpdates,
 	)
 
 	// 3. Place all stateful order placements included in the last block on the memclob.
+	// Note telemetry is measured outside of the function call because `PlaceStatefulOrdersFromLastBlock`
+	// is called within `PlaceConditionalOrdersTriggeredInLastBlock`.
+	startPlaceLongTermOrders := time.Now()
 	offchainUpdates = keeper.PlaceStatefulOrdersFromLastBlock(
 		ctx,
-		processProposerMatchesEvents.PlacedStatefulOrders,
+		processProposerMatchesEvents.PlacedLongTermOrderIds,
+		offchainUpdates,
+	)
+	telemetry.MeasureSince(
+		startPlaceLongTermOrders,
+		types.ModuleName,
+		metrics.PlaceLongTermOrdersFromLastBlock,
+		metrics.Latency,
+	)
+	telemetry.SetGauge(
+		float32(len(processProposerMatchesEvents.PlacedLongTermOrderIds)),
+		types.ModuleName,
+		metrics.PlaceLongTermOrdersFromLastBlock,
+		metrics.Count,
+	)
+
+	// 4. Place all conditional orders triggered in EndBlocker of last block on the memclob.
+	offchainUpdates = keeper.PlaceConditionalOrdersTriggeredInLastBlock(
+		ctx,
+		processProposerMatchesEvents.ConditionalOrderIdsTriggeredInLastBlock,
 		offchainUpdates,
 	)
 
-	// 4. Replay the local validator’s operations onto the book.
-	replayUpdates := memClob.ReplayOperations(
+	// 5. Replay the local validator’s operations onto the book.
+	replayUpdates := keeper.MemClob.ReplayOperations(
 		ctx,
 		localValidatorOperationsQueue,
 		shortTermOrderTxBytes,
@@ -181,53 +205,17 @@ func PrepareCheckState(
 		offchainUpdates = replayUpdates
 	}
 
-	// 5. Get all potentially liquidatable subaccount IDs and attempt to liquidate them.
+	// 6. Get all potentially liquidatable subaccount IDs and attempt to liquidate them.
 	subaccountIds := liquidatableSubaccountIds.GetSubaccountIds()
-
-	telemetry.ModuleSetGauge(
-		types.ModuleName,
-		float32(len(subaccountIds)),
-		metrics.Liquidations,
-		metrics.LiquidatableSubaccountIds,
-		metrics.Count,
-	)
-
-	// Get the liquidation order for each subaccount.
-	liquidationOrders := make([]types.LiquidationOrder, 0)
-	for _, subaccountId := range subaccountIds {
-		// If attempting to liquidate a subaccount returns an error, panic.
-		liquidationOrder, err := keeper.MaybeGetLiquidationOrder(ctx, subaccountId)
-		if err != nil {
-			panic(err)
-		}
-
-		if liquidationOrder != nil {
-			liquidationOrders = append(liquidationOrders, *liquidationOrder)
-		}
-	}
-
-	// Sort liquidation orders by clob pair id, then by fillable price, then by order hash.
-	sort.Sort(types.SortedLiquidationOrders(liquidationOrders))
-
-	// Attempt to place each liquidation order and perform deleveraging if necessary.
-	for _, liquidationOrder := range liquidationOrders {
-		if _, _, err := keeper.PlacePerpetualLiquidation(ctx, liquidationOrder); err != nil {
-			ctx.Logger().Error(
-				fmt.Sprintf(
-					"Failed to liquidate subaccount. Liquidation Order: (%+v). Err: %v",
-					liquidationOrder,
-					err,
-				),
-			)
-			panic(err)
-		}
+	if err := keeper.LiquidateSubaccountsAgainstOrderbook(ctx, subaccountIds); err != nil {
+		panic(err)
 	}
 
 	// Send all off-chain Indexer events
 	keeper.SendOffchainMessages(offchainUpdates, nil, metrics.SendPrepareCheckStateOffchainUpdates)
 
-	newLocalValidatorOperationsQueue, _ := memClob.GetOperationsToReplay(ctx)
-	ctx.Logger().Debug(
+	newLocalValidatorOperationsQueue, _ := keeper.MemClob.GetOperationsToReplay(ctx)
+	keeper.Logger(ctx).Debug(
 		"Local operations queue after PrepareCheckState",
 		"newLocalValidatorOperationsQueue",
 		types.GetInternalOperationsQueueTextString(newLocalValidatorOperationsQueue),
@@ -236,5 +224,5 @@ func PrepareCheckState(
 	)
 
 	// Set per-orderbook gauges.
-	memClob.SetMemclobGauges(ctx)
+	keeper.MemClob.SetMemclobGauges(ctx)
 }

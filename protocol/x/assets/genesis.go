@@ -2,8 +2,8 @@ package assets
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/assets/keeper"
-	"github.com/dydxprotocol/v4/x/assets/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/assets/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/assets/types"
 )
 
 // InitGenesis initializes the capability module's state from a provided genesis
@@ -14,6 +14,7 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	for _, asset := range genState.Assets {
 		_, err := k.CreateAsset(
 			ctx,
+			asset.Id,
 			asset.Symbol,
 			asset.Denom,
 			asset.DenomExponent,

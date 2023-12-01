@@ -4,7 +4,7 @@ import (
 	"context"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/blocktime/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -43,7 +43,7 @@ func (k Keeper) PreviousBlockInfo(
 	ctx := sdk.UnwrapSDKContext(c)
 	info := k.GetPreviousBlockInfo(ctx)
 	return &types.QueryPreviousBlockInfoResponse{
-		Info: info,
+		Info: &info,
 	}, nil
 }
 

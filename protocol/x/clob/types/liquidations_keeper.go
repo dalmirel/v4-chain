@@ -4,7 +4,7 @@ import (
 	"math/big"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 // LiquidationsKeeper is an interface that encapsulates all reads and writes to the
@@ -16,6 +16,14 @@ type LiquidationsKeeper interface {
 	) (
 		orderSizeOptimisticallyFilledFromMatchingQuantums satypes.BaseQuantums,
 		orderStatus OrderStatus,
+		err error,
+	)
+	MaybeDeleverageSubaccount(
+		ctx sdk.Context,
+		subaccountId satypes.SubaccountId,
+		perpetualId uint32,
+	) (
+		quantumsDeleveraged *big.Int,
 		err error,
 	)
 	IsLiquidatable(
@@ -46,7 +54,7 @@ type LiquidationsKeeper interface {
 	GetInsuranceFundBalance(
 		ctx sdk.Context,
 	) (
-		balance uint64,
+		balance *big.Int,
 	)
 	GetLiquidationInsuranceFundDelta(
 		ctx sdk.Context,
@@ -71,16 +79,22 @@ type LiquidationsKeeper interface {
 		ctx sdk.Context,
 		subaccountId satypes.SubaccountId,
 	) (
-		clobPair ClobPair,
-		quantums *big.Int,
+		perpetualId uint32,
 		err error,
 	)
-	GetMaxLiquidatableNotionalAndInsuranceLost(
+	GetSubaccountMaxNotionalLiquidatable(
 		ctx sdk.Context,
 		subaccountId satypes.SubaccountId,
 		perpetualId uint32,
 	) (
 		bigMaxNotionalLiquidatable *big.Int,
+		err error,
+	)
+	GetSubaccountMaxInsuranceLost(
+		ctx sdk.Context,
+		subaccountId satypes.SubaccountId,
+		perpetualId uint32,
+	) (
 		bigMaxQuantumsInsuranceLost *big.Int,
 		err error,
 	)

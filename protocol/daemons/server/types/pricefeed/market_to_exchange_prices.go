@@ -6,11 +6,11 @@ import (
 
 	gometrics "github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/api"
-	pricefeedmetrics "github.com/dydxprotocol/v4/daemons/pricefeed/metrics"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/lib/metrics"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/api"
+	pricefeedmetrics "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 // MarketToExchangePrices maintains price info for multiple markets. Each
@@ -18,7 +18,7 @@ import (
 // MarketToExchangePrices supports methods to update prices and to retrieve
 // median prices. Methods are goroutine safe.
 type MarketToExchangePrices struct {
-	sync.RWMutex                                       // reader-writer lock
+	sync.Mutex                                         // lock
 	marketToExchangePrices map[uint32]*ExchangeToPrice // {k: market id, v: exchange prices}
 	// maxPriceAge is the maximum age of a price before it is considered too stale to be used.
 	// Prices older than this age will not be used to calculate the median price.
@@ -66,8 +66,8 @@ func (mte *MarketToExchangePrices) GetValidMedianPrices(
 	cutoffTime := readTime.Add(-mte.maxPriceAge)
 	marketIdToMedianPrice := make(map[uint32]uint64)
 
-	mte.RLock()
-	defer mte.RUnlock()
+	mte.Lock()
+	defer mte.Unlock()
 	for _, marketParam := range marketParams {
 		marketId := marketParam.Id
 		exchangeToPrice, ok := mte.marketToExchangePrices[marketId]
@@ -87,7 +87,7 @@ func (mte *MarketToExchangePrices) GetValidMedianPrices(
 			continue
 		}
 
-		// GetValidPrice filters prices based on cutoff time.
+		// GetValidPriceForMarket filters prices based on cutoff time.
 		validPrices := exchangeToPrice.GetValidPrices(cutoffTime)
 		telemetry.SetGaugeWithLabels(
 			[]string{
@@ -104,7 +104,7 @@ func (mte *MarketToExchangePrices) GetValidMedianPrices(
 		// The number of valid prices must be >= min number of exchanges.
 		if len(validPrices) >= int(marketParam.MinExchanges) {
 			// Calculate the median. Returns an error if the input is empty.
-			median, err := lib.MedianUint64(validPrices)
+			median, err := lib.Median(validPrices)
 			if err != nil {
 				telemetry.IncrCounterWithLabels(
 					[]string{

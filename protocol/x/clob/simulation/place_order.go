@@ -11,11 +11,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/testutil/sim_helpers"
-	"github.com/dydxprotocol/v4/x/clob/keeper"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/sim_helpers"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 const (
@@ -81,7 +81,7 @@ func SimulateMsgPlaceOrder(
 		subaccountId := *subAccount.GetId()
 
 		// Get all clob pairs.
-		clobPairs := k.GetAllClobPair(ctx)
+		clobPairs := k.GetAllClobPairs(ctx)
 		if len(clobPairs) < 1 {
 			panic(fmt.Errorf("SimulateMsgPlaceOrder: Simulation has no CLOB pairs available"))
 		}
@@ -112,7 +112,7 @@ func SimulateMsgPlaceOrder(
 
 		bigMinOrderQuoteQuantums := types.FillAmountToQuoteQuantums(
 			types.Subticks(clobPair.SubticksPerTick),
-			satypes.BaseQuantums(clobPair.MinOrderBaseQuantums),
+			satypes.BaseQuantums(clobPair.StepBaseQuantums),
 			clobPair.QuantumConversionExponent,
 		)
 
@@ -150,7 +150,7 @@ func SimulateMsgPlaceOrder(
 			subaccountId,
 			currentPositionSizeQuantums,
 			uint64(clobPair.SubticksPerTick),
-			clobPair.MinOrderBaseQuantums,
+			clobPair.StepBaseQuantums,
 			bigMinOrderQuoteQuantums,
 			bigSubaccountMaxOrderQuoteQuantums,
 		)

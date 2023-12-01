@@ -2,8 +2,8 @@ package perpetuals
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/perpetuals/keeper"
-	"github.com/dydxprotocol/v4/x/perpetuals/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
 )
 
 // InitGenesis initializes the perpetual module's state from a provided genesis
@@ -11,24 +11,17 @@ import (
 func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) {
 	k.InitializeForGenesis(ctx)
 
-	// Set each parameter in state.
-	err := k.SetFundingRateClampFactorPpm(ctx, genState.Params.FundingRateClampFactorPpm)
-	if err != nil {
-		panic(err)
-	}
-	err = k.SetPremiumVoteClampFactorPpm(ctx, genState.Params.PremiumVoteClampFactorPpm)
-	if err != nil {
-		panic(err)
-	}
-	err = k.SetMinNumVotesPerSample(ctx, genState.Params.MinNumVotesPerSample)
+	// Set parameters in state.
+	err := k.SetParams(ctx, genState.Params)
 	if err != nil {
 		panic(err)
 	}
 
 	// Create all liquidity tiers.
 	for _, elem := range genState.LiquidityTiers {
-		_, err := k.CreateLiquidityTier(
+		_, err := k.SetLiquidityTier(
 			ctx,
+			elem.Id,
 			elem.Name,
 			elem.InitialMarginPpm,
 			elem.MaintenanceFractionPpm,
@@ -45,11 +38,12 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	for _, elem := range genState.Perpetuals {
 		_, err := k.CreatePerpetual(
 			ctx,
-			elem.Ticker,
-			elem.MarketId,
-			elem.AtomicResolution,
-			elem.DefaultFundingPpm,
-			elem.LiquidityTier,
+			elem.Params.Id,
+			elem.Params.Ticker,
+			elem.Params.MarketId,
+			elem.Params.AtomicResolution,
+			elem.Params.DefaultFundingPpm,
+			elem.Params.LiquidityTier,
 		)
 
 		if err != nil {

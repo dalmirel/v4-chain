@@ -1,6 +1,7 @@
 package bank
 
 import (
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	testutilcli "github.com/cosmos/cosmos-sdk/testutil/cli"
@@ -9,7 +10,7 @@ import (
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
-	"github.com/dydxprotocol/v4/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
 )
 
 // GetModuleAccUsdcBalance is a test utility function to query USDC balance
@@ -48,7 +49,7 @@ func GetModuleAccUsdcBalance(
 // *big.Int type when setting up mocks.
 func MatchUsdcOfAmount(amount int64) func(coins sdk.Coins) bool {
 	return func(coins sdk.Coins) bool {
-		return coins[0].Amount.Equal(sdk.NewInt(amount))
+		return coins[0].Amount.Equal(sdkmath.NewInt(amount))
 	}
 }
 

@@ -2,15 +2,15 @@ package containertest
 
 import (
 	"fmt"
-	pricefeed_testutil "github.com/dydxprotocol/v4/testutil/pricefeed"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/price_function/testexchange"
-	pricefeed "github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	"github.com/dydxprotocol/v4/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/price_function/testexchange"
+	pricefeed "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	pricefeed_testutil "github.com/dydxprotocol/v4-chain/protocol/testutil/pricefeed"
 	"github.com/ory/dockertest/v3"
 )
 
@@ -73,7 +73,7 @@ func (t *Testnet) Start() (err error) {
 	err = t.initialize()
 	if err != nil {
 		cleanUpErr := t.CleanUp()
-		if cleanUpErr != nil {
+		if cleanUpErr == nil {
 			return fmt.Errorf("testnet initialization failed with error: %w; resources successfully cleaned up", err)
 		}
 		return fmt.Errorf(
@@ -103,7 +103,7 @@ func (t *Testnet) initialize() (err error) {
 
 	for moniker, node := range t.Nodes {
 		if err := t.pool.Retry(func() error {
-			return node.WaitUntilBlockHeight(1)
+			return node.WaitUntilBlockHeight(2)
 		}); err != nil {
 			return fmt.Errorf("could not connect to node: %s", moniker)
 		}
@@ -128,6 +128,8 @@ func (t *Testnet) initializeNode(moniker string) (*Node, error) {
 				fmt.Sprintf("/dydxprotocol/chain/.%s", moniker),
 				"--p2p.persistent_peers",
 				persistentPeers,
+				"--bridge-daemon-eth-rpc-endpoint",
+				"https://eth-sepolia.g.alchemy.com/v2/demo",
 			},
 			ExtraHosts: []string{
 				fmt.Sprintf("%s:host-gateway", testexchange.TestExchangeHost),

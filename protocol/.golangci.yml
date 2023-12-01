@@ -2,18 +2,19 @@ linters:
   disable-all: true
   enable:
     - errcheck
+    - errorlint
     - gofmt
     - gosimple
     - govet
     - importas
     - ineffassign
     - lll
+    - misspell
     - revive
     - staticcheck
     - typecheck
     - unused
     - whitespace
-    - errorlint
 linters-settings:
   revive:
     rules:
@@ -26,7 +27,7 @@ linters-settings:
   importas:
     # List of aliases
     alias:
-      - pkg: github.com/dydxprotocol/v4/x/subaccounts/types
+      - pkg: github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types
         alias: satypes
-      - pkg: github.com/dydxprotocol/v4/testutil/constants
+      - pkg: github.com/dydxprotocol/v4-chain/protocol/testutil/constants
         alias: constants

@@ -4,16 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dydxprotocol/v4/daemons/flags"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/api"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/handler"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/price_fetcher"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	"github.com/dydxprotocol/v4/lib"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
 	"sync"
 	"time"
+
+	appflags "github.com/dydxprotocol/v4-chain/protocol/app/flags"
+	daemontypes "github.com/dydxprotocol/v4-chain/protocol/daemons/types"
+
+	sdklog "cosmossdk.io/log"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/api"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/handler"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/price_fetcher"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	libtime "github.com/dydxprotocol/v4-chain/protocol/lib/time"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 
 	"github.com/cometbft/cometbft/libs/log"
 )
@@ -109,15 +114,16 @@ func (c *Client) Stop() {
 //  5. Start MarketUpdater subtask to periodically update the market configs.
 //  6. Start PriceUpdater to begin broadcasting prices.
 func (c *Client) start(ctx context.Context,
-	flags flags.DaemonFlags,
+	daemonFlags flags.DaemonFlags,
+	appFlags appflags.Flags,
 	logger log.Logger,
-	grpcClient lib.GrpcClient,
+	grpcClient daemontypes.GrpcClient,
 	exchangeIdToStartupConfig map[types.ExchangeId]*types.ExchangeStartupConfig,
 	exchangeIdToExchangeDetails map[types.ExchangeId]types.ExchangeQueryDetails,
 	subTaskRunner SubTaskRunner,
 ) (err error) {
 	// 1. Establish connections to gRPC servers.
-	queryConn, err := grpcClient.NewTcpConnection(ctx, flags.Shared.GrpcServerAddress)
+	queryConn, err := grpcClient.NewTcpConnection(ctx, appFlags.GrpcAddress)
 	if err != nil {
 		logger.Error("Failed to establish gRPC connection to Cosmos gRPC query services", "error", err)
 		return err
@@ -129,7 +135,7 @@ func (c *Client) start(ctx context.Context,
 		}
 	}()
 
-	daemonConn, err := grpcClient.NewGrpcConnection(ctx, flags.Shared.SocketAddress)
+	daemonConn, err := grpcClient.NewGrpcConnection(ctx, daemonFlags.Shared.SocketAddress)
 	if err != nil {
 		logger.Error("Failed to establish gRPC connection to socket address", "error", err)
 		return err
@@ -168,7 +174,7 @@ func (c *Client) start(ctx context.Context,
 	}
 
 	// 4. Start PriceEncoder and PriceFetcher per exchange.
-	timeProvider := &lib.TimeProviderImpl{}
+	timeProvider := &libtime.TimeProviderImpl{}
 	for _exchangeId := range exchangeIdToStartupConfig {
 		// Assign these within the loop to avoid unexpected values being passed to the goroutines.
 		exchangeId := _exchangeId
@@ -189,6 +195,7 @@ func (c *Client) start(ctx context.Context,
 			defer c.runningSubtasksWaitGroup.Done()
 			subTaskRunner.StartPriceEncoder(
 				exchangeId,
+				priceFeedMutableMarketConfigs,
 				exchangeToMarketPrices,
 				logger,
 				bCh,
@@ -233,7 +240,7 @@ func (c *Client) start(ctx context.Context,
 	// The price updater will read from an in-memory cache and send updates over gRPC for the
 	// server to read.
 
-	priceUpdaterTicker, priceUpdaterStop := c.newTickerWithStop(int(flags.Price.LoopDelayMs))
+	priceUpdaterTicker, priceUpdaterStop := c.newTickerWithStop(int(daemonFlags.Price.LoopDelayMs))
 
 	// Now that all persistent subtasks have been started and all tickers and stop channels are created,
 	// signal that the startup process is complete. This needs to be called before entering the
@@ -259,21 +266,29 @@ func (c *Client) start(ctx context.Context,
 // Note: the daemon will panic if it fails to start up.
 func StartNewClient(
 	ctx context.Context,
-	flags flags.DaemonFlags,
+	daemonFlags flags.DaemonFlags,
+	appFlags appflags.Flags,
 	logger log.Logger,
-	grpcClient lib.GrpcClient,
+	grpcClient daemontypes.GrpcClient,
 	exchangeIdToStartupConfig map[types.ExchangeId]*types.ExchangeStartupConfig,
 	exchangeIdToExchangeDetails map[types.ExchangeId]types.ExchangeQueryDetails,
 	subTaskRunner SubTaskRunner,
 ) (client *Client) {
+	// Log the daemon flags.
+	logger.Info(
+		"Starting pricefeed daemon with flags",
+		"PriceFlags", daemonFlags.Price,
+	)
+
 	client = newClient()
 	client.runningSubtasksWaitGroup.Add(1)
 	go func() {
 		defer client.runningSubtasksWaitGroup.Done()
 		err := client.start(
 			ctx,
-			flags,
-			logger,
+			daemonFlags,
+			appFlags,
+			logger.With(sdklog.ModuleKey, constants.PricefeedDaemonModuleName),
 			grpcClient,
 			exchangeIdToStartupConfig,
 			exchangeIdToExchangeDetails,

@@ -4,11 +4,19 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestToStateKey(t *testing.T) {
+	// Success
+	b, _ := constants.Alice_Num0.Marshal()
+	require.Equal(t, b, constants.Alice_Num0.ToStateKey())
+
+	// No panic case. MustMarshal() > Marshal() > MarshalToSizedBuffer() which never returns an error.
+}
 
 func TestSortSubaccountIds(t *testing.T) {
 	tests := map[string]struct {

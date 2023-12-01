@@ -1,6 +1,8 @@
 package msgs
 
-import "github.com/dydxprotocol/v4/lib/maps"
+import (
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+)
 
 var (
 	// AllTypeMessages is a list of all messages and types that are used in the app.
@@ -56,6 +58,11 @@ var (
 		"/cosmos.distribution.v1beta1.MsgWithdrawDelegatorRewardResponse":     {},
 		"/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission":         {},
 		"/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommissionResponse": {},
+
+		// evidence
+		"/cosmos.evidence.v1beta1.Equivocation":              {},
+		"/cosmos.evidence.v1beta1.MsgSubmitEvidence":         {},
+		"/cosmos.evidence.v1beta1.MsgSubmitEvidenceResponse": {},
 
 		// feegrant
 		"/cosmos.feegrant.v1beta1.AllowedMsgAllowance":        {},
@@ -127,14 +134,12 @@ var (
 		"/cosmos.upgrade.v1beta1.SoftwareUpgradeProposal":       {},
 
 		// blocktime
-		"/dydxprotocol.blocktime.MsgIsDelayedBlock":               {},
-		"/dydxprotocol.blocktime.MsgIsDelayedBlockResponse":       {},
 		"/dydxprotocol.blocktime.MsgUpdateDowntimeParams":         {},
 		"/dydxprotocol.blocktime.MsgUpdateDowntimeParamsResponse": {},
 
 		// bridge
-		"/dydxprotocol.bridge.MsgAcknowledgeBridge":           {},
-		"/dydxprotocol.bridge.MsgAcknowledgeBridgeResponse":   {},
+		"/dydxprotocol.bridge.MsgAcknowledgeBridges":          {},
+		"/dydxprotocol.bridge.MsgAcknowledgeBridgesResponse":  {},
 		"/dydxprotocol.bridge.MsgCompleteBridge":              {},
 		"/dydxprotocol.bridge.MsgCompleteBridgeResponse":      {},
 		"/dydxprotocol.bridge.MsgUpdateEventParams":           {},
@@ -145,36 +150,70 @@ var (
 		"/dydxprotocol.bridge.MsgUpdateSafetyParamsResponse":  {},
 
 		// clob
-		"/dydxprotocol.clob.MsgCancelOrder":                {},
-		"/dydxprotocol.clob.MsgCancelOrderResponse":        {},
-		"/dydxprotocol.clob.MsgPlaceOrder":                 {},
-		"/dydxprotocol.clob.MsgPlaceOrderResponse":         {},
-		"/dydxprotocol.clob.MsgProposedOperations":         {},
-		"/dydxprotocol.clob.MsgProposedOperationsResponse": {},
+		"/dydxprotocol.clob.MsgCancelOrder":                                {},
+		"/dydxprotocol.clob.MsgCancelOrderResponse":                        {},
+		"/dydxprotocol.clob.MsgCreateClobPair":                             {},
+		"/dydxprotocol.clob.MsgCreateClobPairResponse":                     {},
+		"/dydxprotocol.clob.MsgPlaceOrder":                                 {},
+		"/dydxprotocol.clob.MsgPlaceOrderResponse":                         {},
+		"/dydxprotocol.clob.MsgProposedOperations":                         {},
+		"/dydxprotocol.clob.MsgProposedOperationsResponse":                 {},
+		"/dydxprotocol.clob.MsgUpdateBlockRateLimitConfiguration":          {},
+		"/dydxprotocol.clob.MsgUpdateBlockRateLimitConfigurationResponse":  {},
+		"/dydxprotocol.clob.MsgUpdateClobPair":                             {},
+		"/dydxprotocol.clob.MsgUpdateClobPairResponse":                     {},
+		"/dydxprotocol.clob.MsgUpdateEquityTierLimitConfiguration":         {},
+		"/dydxprotocol.clob.MsgUpdateEquityTierLimitConfigurationResponse": {},
+		"/dydxprotocol.clob.MsgUpdateLiquidationsConfig":                   {},
+		"/dydxprotocol.clob.MsgUpdateLiquidationsConfigResponse":           {},
+
+		// delaymsg
+		"/dydxprotocol.delaymsg.MsgDelayMessage":         {},
+		"/dydxprotocol.delaymsg.MsgDelayMessageResponse": {},
 
 		// feetiers
 		"/dydxprotocol.feetiers.MsgUpdatePerpetualFeeParams":         {},
 		"/dydxprotocol.feetiers.MsgUpdatePerpetualFeeParamsResponse": {},
 
 		// perpetuals
-		"/dydxprotocol.perpetuals.MsgAddPremiumVotes":         {},
-		"/dydxprotocol.perpetuals.MsgAddPremiumVotesResponse": {},
+		"/dydxprotocol.perpetuals.MsgAddPremiumVotes":               {},
+		"/dydxprotocol.perpetuals.MsgAddPremiumVotesResponse":       {},
+		"/dydxprotocol.perpetuals.MsgCreatePerpetual":               {},
+		"/dydxprotocol.perpetuals.MsgCreatePerpetualResponse":       {},
+		"/dydxprotocol.perpetuals.MsgSetLiquidityTier":              {},
+		"/dydxprotocol.perpetuals.MsgSetLiquidityTierResponse":      {},
+		"/dydxprotocol.perpetuals.MsgUpdateParams":                  {},
+		"/dydxprotocol.perpetuals.MsgUpdateParamsResponse":          {},
+		"/dydxprotocol.perpetuals.MsgUpdatePerpetualParams":         {},
+		"/dydxprotocol.perpetuals.MsgUpdatePerpetualParamsResponse": {},
 
 		// prices
+		"/dydxprotocol.prices.MsgCreateOracleMarket":         {},
+		"/dydxprotocol.prices.MsgCreateOracleMarketResponse": {},
 		"/dydxprotocol.prices.MsgUpdateMarketPrices":         {},
 		"/dydxprotocol.prices.MsgUpdateMarketPricesResponse": {},
+		"/dydxprotocol.prices.MsgUpdateMarketParam":          {},
+		"/dydxprotocol.prices.MsgUpdateMarketParamResponse":  {},
 
 		// sending
-		"/dydxprotocol.sending.MsgCreateTransfer":                 {},
-		"/dydxprotocol.sending.MsgCreateTransferResponse":         {},
-		"/dydxprotocol.sending.MsgDepositToSubaccount":            {},
-		"/dydxprotocol.sending.MsgDepositToSubaccountResponse":    {},
-		"/dydxprotocol.sending.MsgWithdrawFromSubaccount":         {},
-		"/dydxprotocol.sending.MsgWithdrawFromSubaccountResponse": {},
+		"/dydxprotocol.sending.MsgCreateTransfer":                  {},
+		"/dydxprotocol.sending.MsgCreateTransferResponse":          {},
+		"/dydxprotocol.sending.MsgDepositToSubaccount":             {},
+		"/dydxprotocol.sending.MsgDepositToSubaccountResponse":     {},
+		"/dydxprotocol.sending.MsgWithdrawFromSubaccount":          {},
+		"/dydxprotocol.sending.MsgWithdrawFromSubaccountResponse":  {},
+		"/dydxprotocol.sending.MsgSendFromModuleToAccount":         {},
+		"/dydxprotocol.sending.MsgSendFromModuleToAccountResponse": {},
 
 		// stats
 		"/dydxprotocol.stats.MsgUpdateParams":         {},
 		"/dydxprotocol.stats.MsgUpdateParamsResponse": {},
+
+		// vest
+		"/dydxprotocol.vest.MsgSetVestEntry":            {},
+		"/dydxprotocol.vest.MsgSetVestEntryResponse":    {},
+		"/dydxprotocol.vest.MsgDeleteVestEntry":         {},
+		"/dydxprotocol.vest.MsgDeleteVestEntryResponse": {},
 
 		// rewards
 		"/dydxprotocol.rewards.MsgUpdateParams":         {},
@@ -243,6 +282,7 @@ var (
 		"/ibc.core.connection.v1.Version":                          {},
 
 		// ibc.lightclients
+		"/ibc.lightclients.localhost.v2.ClientState":     {},
 		"/ibc.lightclients.tendermint.v1.ClientState":    {},
 		"/ibc.lightclients.tendermint.v1.ConsensusState": {},
 		"/ibc.lightclients.tendermint.v1.Header":         {},
@@ -250,7 +290,7 @@ var (
 	}
 
 	// DisallowMsgs are messages that cannot be externally submitted.
-	DisallowMsgs = maps.MergeAllMapsMustHaveDistinctKeys(
+	DisallowMsgs = lib.MergeAllMapsMustHaveDistinctKeys(
 		AppInjectedMsgSamples,
 		InternalMsgSamplesAll,
 		NestedMsgSamples,

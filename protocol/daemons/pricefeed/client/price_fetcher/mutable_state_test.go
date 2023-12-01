@@ -2,9 +2,9 @@ package price_fetcher
 
 import (
 	"github.com/cometbft/cometbft/libs/log"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -74,7 +74,7 @@ func TestGetMarketExponents(t *testing.T) {
 	require.Equal(t, pf.mutableState.marketExponents, marketExponents)
 }
 
-func TestMutableExchangeConfig(t *testing.T) {
+func TestGetMutableExchangeConfig(t *testing.T) {
 	pf, err := NewPriceFetcher(
 		constants.Exchange1_2MaxQueries_StartupConfig,
 		types.ExchangeQueryDetails{},

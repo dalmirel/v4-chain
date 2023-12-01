@@ -16,9 +16,9 @@ import (
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/dydxprotocol/v4/x/feetiers/client/cli"
-	"github.com/dydxprotocol/v4/x/feetiers/keeper"
-	"github.com/dydxprotocol/v4/x/feetiers/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/feetiers/client/cli"
+	"github.com/dydxprotocol/v4-chain/protocol/x/feetiers/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types"
 )
 
 var (
@@ -122,6 +122,7 @@ func (am AppModule) Name() string {
 // RegisterServices registers a GRPC query service to respond to the
 // module-specific GRPC queries.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
+	types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
 	types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
 }
 

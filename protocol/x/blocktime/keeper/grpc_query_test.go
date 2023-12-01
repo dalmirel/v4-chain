@@ -8,8 +8,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	testapp "github.com/dydxprotocol/v4/testutil/app"
-	"github.com/dydxprotocol/v4/x/blocktime/types"
+	testapp "github.com/dydxprotocol/v4-chain/protocol/testutil/app"
+	"github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types"
 )
 
 func TestDowntimeParams(t *testing.T) {
@@ -55,7 +55,7 @@ func TestAllDowntimeInfo(t *testing.T) {
 		Infos: []*types.AllDowntimeInfo_DowntimeInfo{
 			{
 				Duration: time.Second,
-				BlockInfo: &types.BlockInfo{
+				BlockInfo: types.BlockInfo{
 					Height:    1,
 					Timestamp: time.Now().UTC(),
 				},

@@ -9,11 +9,11 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	"github.com/dydxprotocol/v4/lib"
-	testutil_rand "github.com/dydxprotocol/v4/testutil/rand"
-	"github.com/dydxprotocol/v4/x/perpetuals/simulation"
-	"github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricessimulation "github.com/dydxprotocol/v4/x/prices/simulation"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	testutil_rand "github.com/dydxprotocol/v4-chain/protocol/testutil/rand"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/simulation"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricessimulation "github.com/dydxprotocol/v4-chain/protocol/x/prices/simulation"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,19 +58,17 @@ func TestRandomizedGenState(t *testing.T) {
 		}
 
 		for _, perp := range perpetualsGenesis.Perpetuals {
-			require.True(t, len(perp.Ticker) >= 1)
+			require.True(t, len(perp.Params.Ticker) >= 1)
 
-			require.True(t, perp.MarketId <= 1_000)
+			require.True(t, perp.Params.MarketId <= 1_000)
 
-			require.True(t, perp.AtomicResolution >= -10)
-			require.True(t, perp.AtomicResolution <= 10)
+			require.True(t, perp.Params.AtomicResolution >= -10)
+			require.True(t, perp.Params.AtomicResolution <= 10)
 
-			require.True(t, perp.DefaultFundingPpm > -int32(lib.OneMillion))
-			require.True(t, perp.DefaultFundingPpm < int32(lib.OneMillion))
+			require.True(t, perp.Params.DefaultFundingPpm > -int32(lib.OneMillion))
+			require.True(t, perp.Params.DefaultFundingPpm < int32(lib.OneMillion))
 
 			require.True(t, perp.FundingIndex.BigInt().Sign() == 0)
-
-			require.True(t, perp.OpenInterest == 0)
 		}
 	}
 }

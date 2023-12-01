@@ -10,14 +10,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/testutil/nullify"
-	"github.com/dydxprotocol/v4/x/clob/memclob"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	"github.com/dydxprotocol/v4/x/perpetuals"
-	"github.com/dydxprotocol/v4/x/prices"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/nullify"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/memclob"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 )
 
 // Prevent strconv unused error
@@ -25,11 +22,17 @@ var _ = strconv.IntSize
 
 func TestClobPairQuerySingle(t *testing.T) {
 	memClob := memclob.NewMemClobPriceTimePriority(false)
-	ks := keepertest.NewClobKeepersTestContext(t, memClob, &mocks.BankKeeper{}, &mocks.IndexerEventManager{})
+	mockIndexerEventManager := &mocks.IndexerEventManager{}
+	ks := keepertest.NewClobKeepersTestContext(t, memClob, &mocks.BankKeeper{}, mockIndexerEventManager)
 	wctx := sdk.WrapSDKContext(ks.Ctx)
-	prices.InitGenesis(ks.Ctx, *ks.PricesKeeper, constants.Prices_DefaultGenesisState)
-	perpetuals.InitGenesis(ks.Ctx, *ks.PerpetualsKeeper, constants.Perpetuals_DefaultGenesisState)
-	msgs := createNClobPair(ks.ClobKeeper, ks.Ctx, 2)
+	msgs := keepertest.CreateNClobPair(t,
+		ks.ClobKeeper,
+		ks.PerpetualsKeeper,
+		ks.PricesKeeper,
+		ks.Ctx,
+		2,
+		mockIndexerEventManager,
+	)
 	for _, tc := range []struct {
 		desc     string
 		request  *types.QueryGetClobPairRequest
@@ -79,11 +82,17 @@ func TestClobPairQuerySingle(t *testing.T) {
 
 func TestClobPairQueryPaginated(t *testing.T) {
 	memClob := memclob.NewMemClobPriceTimePriority(false)
-	ks := keepertest.NewClobKeepersTestContext(t, memClob, &mocks.BankKeeper{}, &mocks.IndexerEventManager{})
+	mockIndexerEventManager := &mocks.IndexerEventManager{}
+	ks := keepertest.NewClobKeepersTestContext(t, memClob, &mocks.BankKeeper{}, mockIndexerEventManager)
 	wctx := sdk.WrapSDKContext(ks.Ctx)
-	prices.InitGenesis(ks.Ctx, *ks.PricesKeeper, constants.Prices_DefaultGenesisState)
-	perpetuals.InitGenesis(ks.Ctx, *ks.PerpetualsKeeper, constants.Perpetuals_DefaultGenesisState)
-	msgs := createNClobPair(ks.ClobKeeper, ks.Ctx, 5)
+	msgs := keepertest.CreateNClobPair(t,
+		ks.ClobKeeper,
+		ks.PerpetualsKeeper,
+		ks.PricesKeeper,
+		ks.Ctx,
+		10,
+		mockIndexerEventManager,
+	)
 
 	request := func(next []byte, offset, limit uint64, total bool) *types.QueryAllClobPairRequest {
 		return &types.QueryAllClobPairRequest{

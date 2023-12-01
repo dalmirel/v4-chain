@@ -9,12 +9,13 @@ import (
 	"github.com/cometbft/cometbft/libs/log"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/dydxprotocol/v4/indexer/msgsender"
-	"github.com/dydxprotocol/v4/indexer/off_chain_updates"
-	"github.com/dydxprotocol/v4/lib"
-	testutil_memclob "github.com/dydxprotocol/v4/testutil/memclob"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/msgsender"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/off_chain_updates"
+	indexershared "github.com/dydxprotocol/v4-chain/protocol/indexer/shared"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	testutil_memclob "github.com/dydxprotocol/v4-chain/protocol/testutil/memclob"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +85,6 @@ func createCollatCheckExpectationsFromPendingMatches(
 				{
 					RemainingQuantums: expectedMatch.matchedQuantums,
 					IsBuy:             expectedMatch.makerOrder.IsBuy(),
-					IsTaker:           false,
 					Subticks:          subticks,
 					ClobPairId:        clobPairId,
 				},
@@ -93,7 +93,6 @@ func createCollatCheckExpectationsFromPendingMatches(
 				{
 					RemainingQuantums: expectedMatch.matchedQuantums,
 					IsBuy:             expectedMatch.takerOrder.IsBuy(),
-					IsTaker:           true,
 					Subticks:          subticks,
 					ClobPairId:        clobPairId,
 				},
@@ -112,7 +111,6 @@ func createCollatCheckExpectationsFromPendingMatches(
 			{
 				RemainingQuantums: addToOrderbookSize,
 				IsBuy:             order.IsBuy(),
-				IsTaker:           false,
 				Subticks:          order.GetOrderSubticks(),
 				ClobPairId:        clobPairId,
 			},
@@ -273,10 +271,10 @@ func AssertMemclobHasShortTermTxBytes(
 		}
 	}
 
-	expectedShortTermOrdersWithTxBytes := lib.ConvertMapToSliceOfKeys(
+	expectedShortTermOrdersWithTxBytes := lib.GetSortedKeys[types.SortedOrderHashes](
 		expectedShortTermOrderHashes,
 	)
-	shortTermOrdersWithTxBytes := lib.ConvertMapToSliceOfKeys(
+	shortTermOrdersWithTxBytes := lib.GetSortedKeys[types.SortedOrderHashes](
 		memclob.operationsToPropose.ShortTermOrderHashToTxBytes,
 	)
 
@@ -459,7 +457,7 @@ func AssertMemclobHasOrders(
 				require.Fail(t, fmt.Sprintf("Bid with order ID %s has 0 remaining quantums", orderId.String()))
 			}
 
-			remainingAmount, hasRemainingAmount := memclob.getOrderRemainingAmount(
+			remainingAmount, hasRemainingAmount := memclob.GetOrderRemainingAmount(
 				ctx,
 				order.Order,
 			)
@@ -554,9 +552,9 @@ func createOrderbooks(
 	// Create all unique orderbooks.
 	for clobPairId := uint32(0); clobPairId < uint32(maxOrderbooks); clobPairId++ {
 		clobPair := types.ClobPair{
-			Id:                   clobPairId,
-			SubticksPerTick:      5,
-			MinOrderBaseQuantums: 5,
+			Id:               clobPairId,
+			SubticksPerTick:  5,
+			StepBaseQuantums: 5,
 			Metadata: &types.ClobPair_PerpetualClobMetadata{
 				PerpetualClobMetadata: &types.PerpetualClobMetadata{
 					// Set the `PerpetualId` field to be the same as the CLOB pair ID.
@@ -583,9 +581,9 @@ func createAllOrderbooksForMatchableOrders(
 		// Note the for-loop is necessary due to the auto-incrementing ID after creating CLOB pairs.
 		if _, exists := createdOrderbooks[order.GetClobPairId()]; !exists {
 			clobPair := types.ClobPair{
-				Id:                   order.GetClobPairId().ToUint32(),
-				SubticksPerTick:      5,
-				MinOrderBaseQuantums: 5,
+				Id:               order.GetClobPairId().ToUint32(),
+				SubticksPerTick:  5,
+				StepBaseQuantums: 5,
 				Metadata: &types.ClobPair_PerpetualClobMetadata{
 					PerpetualClobMetadata: &types.PerpetualClobMetadata{
 						PerpetualId: 0,
@@ -611,9 +609,9 @@ func createAllOrderbooksForOrders(
 	for _, order := range orders {
 		if _, exists := createdOrderbooks[order.GetClobPairId()]; !exists {
 			clobPair := types.ClobPair{
-				Id:                   order.GetClobPairId().ToUint32(),
-				SubticksPerTick:      5,
-				MinOrderBaseQuantums: 1,
+				Id:               order.GetClobPairId().ToUint32(),
+				SubticksPerTick:  5,
+				StepBaseQuantums: 1,
 				Metadata: &types.ClobPair_PerpetualClobMetadata{
 					PerpetualClobMetadata: &types.PerpetualClobMetadata{
 						PerpetualId: 0,
@@ -642,7 +640,7 @@ func applyOperationsToMemclob(
 		switch op.Operation.(type) {
 		case *types.Operation_ShortTermOrderPlacement:
 			orderPlacement := op.GetShortTermOrderPlacement()
-			_, _, _, err := memclob.PlaceOrder(ctx, orderPlacement.Order, true)
+			_, _, _, err := memclob.PlaceOrder(ctx, orderPlacement.Order)
 			require.NoError(t, err)
 		case *types.Operation_ShortTermOrderCancellation:
 			orderCancellation := op.GetShortTermOrderCancellation()
@@ -655,7 +653,7 @@ func applyOperationsToMemclob(
 				*preexistingStatefulOrderId,
 			)
 			require.True(t, found)
-			_, _, _, err := memclob.PlaceOrder(ctx, orderPlacement.Order, false)
+			_, _, _, err := memclob.PlaceOrder(ctx, orderPlacement.Order)
 			require.NoError(t, err)
 		default:
 			panic(
@@ -710,7 +708,6 @@ func createAllMatchableOrders(
 			_, _, _, err := memclob.PlaceOrder(
 				ctx,
 				order,
-				true,
 			)
 			require.NoError(t, err)
 
@@ -732,7 +729,6 @@ func createAllOrders(
 		_, _, _, err := memclob.PlaceOrder(
 			ctx,
 			order,
-			true,
 		)
 		require.NoError(t, err)
 	}
@@ -1119,7 +1115,7 @@ func placeOrderAndVerifyExpectations(
 	filledSize,
 		orderStatus,
 		offchainUpdates,
-		err := memclob.PlaceOrder(ctx, order, true)
+		err := memclob.PlaceOrder(ctx, order)
 
 	if fakeMemClobKeeper != nil {
 		if err == nil {
@@ -1216,7 +1212,7 @@ func placeOrderAndVerifyExpectationsOperations(
 	filledSize,
 		orderStatus,
 		offchainUpdates,
-		err := memclob.PlaceOrder(ctx, order, true)
+		err := memclob.PlaceOrder(ctx, order)
 
 	if fakeMemClobKeeper != nil {
 		if err == nil {
@@ -1330,7 +1326,7 @@ func assertPlaceOrderOffchainMessages(
 			updateMessage := off_chain_updates.MustCreateOrderRemoveMessageWithReason(
 				noopLogger,
 				order.OrderId,
-				off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_REASON_REPLACED,
+				indexershared.OrderRemovalReason_ORDER_REMOVAL_REASON_REPLACED,
 				off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_STATUS_BEST_EFFORT_CANCELED,
 			)
 			expectedOffchainMessages = append(
@@ -1359,7 +1355,7 @@ func assertPlaceOrderOffchainMessages(
 		cancelMessage := off_chain_updates.MustCreateOrderRemoveMessageWithReason(
 			noopLogger,
 			orderId,
-			off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_REASON_REDUCE_ONLY_RESIZE,
+			indexershared.OrderRemovalReason_ORDER_REMOVAL_REASON_REDUCE_ONLY_RESIZE,
 			off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_STATUS_BEST_EFFORT_CANCELED,
 		)
 		// If the reduce-only order was seen before updates, add it to the set so we don't try to check
@@ -1388,7 +1384,7 @@ func assertPlaceOrderOffchainMessages(
 				updateMessage := off_chain_updates.MustCreateOrderRemoveMessageWithReason(
 					noopLogger,
 					matchOrder.OrderId,
-					off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_REASON_UNDERCOLLATERALIZED,
+					indexershared.OrderRemovalReason_ORDER_REMOVAL_REASON_UNDERCOLLATERALIZED,
 					off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_STATUS_BEST_EFFORT_CANCELED,
 				)
 
@@ -1446,7 +1442,7 @@ func assertPlaceOrderOffchainMessages(
 		cancelMessage := off_chain_updates.MustCreateOrderRemoveMessageWithReason(
 			noopLogger,
 			orderId,
-			off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_REASON_REDUCE_ONLY_RESIZE,
+			indexershared.OrderRemovalReason_ORDER_REMOVAL_REASON_REDUCE_ONLY_RESIZE,
 			off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_STATUS_BEST_EFFORT_CANCELED,
 		)
 		expectedOffchainMessages = append(
@@ -1543,7 +1539,7 @@ func getExpectedPlacePerpetualLiquidationOffchainMessages(
 			updateMessage := off_chain_updates.MustCreateOrderRemoveMessageWithReason(
 				noopLogger,
 				order.OrderId,
-				off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_REASON_SELF_TRADE_ERROR,
+				indexershared.OrderRemovalReason_ORDER_REMOVAL_REASON_SELF_TRADE_ERROR,
 				off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_STATUS_BEST_EFFORT_CANCELED,
 			)
 
@@ -1558,7 +1554,7 @@ func getExpectedPlacePerpetualLiquidationOffchainMessages(
 				updateMessage := off_chain_updates.MustCreateOrderRemoveMessageWithReason(
 					noopLogger,
 					order.OrderId,
-					off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_REASON_UNDERCOLLATERALIZED,
+					indexershared.OrderRemovalReason_ORDER_REMOVAL_REASON_UNDERCOLLATERALIZED,
 					off_chain_updates.OrderRemoveV1_ORDER_REMOVAL_STATUS_BEST_EFFORT_CANCELED,
 				)
 

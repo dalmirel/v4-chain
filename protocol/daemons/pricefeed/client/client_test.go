@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dydxprotocol/v4/daemons/flags"
-	pricefeed_constants "github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/price_fetcher"
-	daemonserver "github.com/dydxprotocol/v4/daemons/server"
-	pricefeed_types "github.com/dydxprotocol/v4/daemons/server/types/pricefeed"
-	"github.com/dydxprotocol/v4/lib"
-	grpc_util "github.com/dydxprotocol/v4/testutil/grpc"
-	pricetypes "github.com/dydxprotocol/v4/x/prices/types"
+	appflags "github.com/dydxprotocol/v4-chain/protocol/app/flags"
+	daemonflags "github.com/dydxprotocol/v4-chain/protocol/daemons/flags"
+	pricefeed_constants "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/price_fetcher"
+	daemonserver "github.com/dydxprotocol/v4-chain/protocol/daemons/server"
+	pricefeed_types "github.com/dydxprotocol/v4-chain/protocol/daemons/server/types/pricefeed"
+	daemontypes "github.com/dydxprotocol/v4-chain/protocol/daemons/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/appoptions"
+	grpc_util "github.com/dydxprotocol/v4-chain/protocol/testutil/grpc"
+	pricetypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 	"google.golang.org/grpc"
 	"net"
 	"sort"
@@ -20,13 +22,13 @@ import (
 	"time"
 
 	"github.com/cometbft/cometbft/libs/log"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/api"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/handler"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	pricefeedtypes "github.com/dydxprotocol/v4/daemons/pricefeed/types"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/client"
-	"github.com/dydxprotocol/v4/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/api"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/handler"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	pricefeedtypes "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/types"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/client"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +42,7 @@ var (
 // struct should only be used for testing.
 type FakeSubTaskRunner struct {
 	sync.WaitGroup
-	sync.RWMutex
+	sync.Mutex
 	UpdaterCallCount       int
 	EncoderCallCount       int
 	FetcherCallCount       int
@@ -52,7 +54,7 @@ func (f *FakeSubTaskRunner) StartPriceUpdater(
 	ctx context.Context,
 	ticker *time.Ticker,
 	stop <-chan bool,
-	exchangeToMarketPrices *types.ExchangeToMarketPrices,
+	exchangeToMarketPrices types.ExchangeToMarketPrices,
 	priceFeedServiceClient api.PriceFeedServiceClient,
 	logger log.Logger,
 ) {
@@ -65,7 +67,8 @@ func (f *FakeSubTaskRunner) StartPriceUpdater(
 // threadsafe.
 func (f *FakeSubTaskRunner) StartPriceEncoder(
 	exchangeId types.ExchangeId,
-	exchangeToMarketPrices *types.ExchangeToMarketPrices,
+	configs types.PricefeedMutableMarketConfigs,
+	exchangeToMarketPrices types.ExchangeToMarketPrices,
 	logger log.Logger,
 	bCh <-chan *price_fetcher.PriceFetcherSubtaskResponse,
 ) {
@@ -235,7 +238,8 @@ func TestStart_InvalidConfig(t *testing.T) {
 			client := newClient()
 			err := client.start(
 				grpc_util.Ctx,
-				flags.GetDefaultDaemonFlags(),
+				daemonflags.GetDefaultDaemonFlags(),
+				appflags.GetFlagValuesFromOptions(appoptions.GetDefaultTestAppOptions("", nil)),
 				log.NewNopLogger(),
 				tc.mockGrpcClient,
 				tc.exchangeIdToStartupConfig,
@@ -286,14 +290,16 @@ func TestStart_InvalidConfig(t *testing.T) {
 // is stopped, but this test ensures that the Stop executes successfully with no hangs.
 func TestStop(t *testing.T) {
 	// Setup daemon and grpc servers.
-	daemonFlags := flags.GetDefaultDaemonFlags()
+	daemonFlags := daemonflags.GetDefaultDaemonFlags()
+	appFlags := appflags.GetFlagValuesFromOptions(appoptions.GetDefaultTestAppOptions("", nil))
 
 	// Configure and run daemon server.
 	daemonServer := daemonserver.NewServer(
 		log.NewNopLogger(),
 		grpc.NewServer(),
-		&lib.FileHandlerImpl{},
+		&daemontypes.FileHandlerImpl{},
 		daemonFlags.Shared.SocketAddress,
+		"test",
 	)
 	daemonServer.WithPriceFeedMarketToExchangePrices(
 		pricefeed_types.NewMarketToExchangePrices(5 * time.Second),
@@ -317,7 +323,7 @@ func TestStop(t *testing.T) {
 	// Start gRPC server with cleanup.
 	defer grpcServer.Stop()
 	go func() {
-		ls, err := net.Listen("tcp", daemonFlags.Shared.GrpcServerAddress)
+		ls, err := net.Listen("tcp", appFlags.GrpcAddress)
 		require.NoError(t, err)
 		err = grpcServer.Serve(ls)
 		require.NoError(t, err)
@@ -326,8 +332,9 @@ func TestStop(t *testing.T) {
 	client := StartNewClient(
 		grpc_util.Ctx,
 		daemonFlags,
+		appFlags,
 		log.NewNopLogger(),
-		&lib.GrpcClientImpl{},
+		&daemontypes.GrpcClientImpl{},
 		constants.TestExchangeStartupConfigs,
 		constants.TestExchangeIdToExchangeQueryDetails,
 		&SubTaskRunnerImpl{},
@@ -343,6 +350,7 @@ func TestPriceEncoder_NoWrites(t *testing.T) {
 	runPriceEncoderSequentially(
 		t,
 		constants.ExchangeId1,
+		genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId1),
 		etmp,
 		bChMap[constants.ExchangeId1],
 		[]*types.MarketPriceTimestamp{},
@@ -364,7 +372,9 @@ func TestPriceEncoder_DoNotWriteError(t *testing.T) {
 	}
 	close(bCh)
 
-	subTaskRunnerImpl.StartPriceEncoder(constants.ExchangeId1, etmp, log.NewNopLogger(), bCh)
+	configs := genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId1)
+
+	subTaskRunnerImpl.StartPriceEncoder(constants.ExchangeId1, configs, etmp, log.NewNopLogger(), bCh)
 
 	require.Empty(t, etmp.ExchangeMarketPrices[constants.ExchangeId1].MarketToPriceTimestamp)
 	require.Empty(t, etmp.ExchangeMarketPrices[constants.ExchangeId2].MarketToPriceTimestamp)
@@ -378,6 +388,7 @@ func TestPriceEncoder_WriteToOneMarket(t *testing.T) {
 	runPriceEncoderSequentially(
 		t,
 		constants.ExchangeId1,
+		genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId1),
 		etmp,
 		bChMap[constants.ExchangeId1],
 		[]*types.MarketPriceTimestamp{
@@ -404,6 +415,7 @@ func TestPriceEncoder_WriteToTwoMarkets(t *testing.T) {
 	runPriceEncoderSequentially(
 		t,
 		constants.ExchangeId1,
+		genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId1),
 		etmp,
 		bChMap[constants.ExchangeId1],
 		[]*types.MarketPriceTimestamp{
@@ -439,6 +451,7 @@ func TestPriceEncoder_WriteToOneMarketTwice(t *testing.T) {
 	runPriceEncoderSequentially(
 		t,
 		constants.ExchangeId1,
+		genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId1),
 		etmp,
 		bChMap[constants.ExchangeId1],
 		[]*types.MarketPriceTimestamp{
@@ -466,6 +479,7 @@ func TestPriceEncoder_WriteToTwoExchanges(t *testing.T) {
 	runPriceEncoderSequentially(
 		t,
 		constants.ExchangeId1,
+		genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId1),
 		etmp,
 		bChMap[constants.ExchangeId1],
 		[]*types.MarketPriceTimestamp{
@@ -476,6 +490,7 @@ func TestPriceEncoder_WriteToTwoExchanges(t *testing.T) {
 	runPriceEncoderSequentially(
 		t,
 		constants.ExchangeId2,
+		genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId2),
 		etmp,
 		bChMap[constants.ExchangeId2],
 		[]*types.MarketPriceTimestamp{
@@ -527,8 +542,8 @@ func TestPriceEncoder_WriteToTwoExchangesConcurrentlyWithManyUpdates(t *testing.
 	go func() {
 		defer wg.Done()
 		runPriceEncoderConcurrently(
-			t,
 			constants.ExchangeId1,
+			genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId1),
 			etmp,
 			bChMap[constants.ExchangeId1],
 			largeMarketWrite,
@@ -539,8 +554,8 @@ func TestPriceEncoder_WriteToTwoExchangesConcurrentlyWithManyUpdates(t *testing.
 	go func() {
 		defer wg.Done()
 		runPriceEncoderConcurrently(
-			t,
 			constants.ExchangeId2,
+			genMockPricefeedMutableMarketConfigsForExchange(constants.ExchangeId2),
 			etmp,
 			bChMap[constants.ExchangeId2],
 			largeMarketWrite,
@@ -730,13 +745,14 @@ func TestMarketUpdater_Mixed(t *testing.T) {
 			pricesQueryClient.On("AllMarketParams", grpc_util.Ctx, mock.Anything).
 				Return(response, tc.queryError)
 			configs := &mocks.PricefeedMutableMarketConfigs{}
-			configs.On("UpdateMarkets", params).Return(tc.queryError)
+			configs.On("UpdateMarkets", params).Return(map[types.MarketId]error{}, tc.queryError)
 
 			RunMarketParamUpdaterTaskLoop(
 				grpc_util.Ctx,
 				configs,
 				pricesQueryClient,
 				log.NewNopLogger(),
+				true,
 			)
 			pricesQueryClient.AssertCalled(t, "AllMarketParams", grpc_util.Ctx, mock.Anything)
 			if tc.queryError == nil {
@@ -765,26 +781,29 @@ func generateBufferedChannelAndExchangeToMarketPrices(
 	t *testing.T,
 	exchangeIds []types.ExchangeId,
 ) (
-	*types.ExchangeToMarketPrices,
+	*types.ExchangeToMarketPricesImpl,
 	map[types.ExchangeId]chan *price_fetcher.PriceFetcherSubtaskResponse,
 ) {
-	etmp, _ := types.NewExchangeToMarketPrices(exchangeIds)
+	_etmp, err := types.NewExchangeToMarketPrices(exchangeIds)
+	etmp := _etmp.(*types.ExchangeToMarketPricesImpl)
+	require.NoError(t, err)
+	require.NotNil(t, etmp)
 
-	exhangeIdToBufferedChannel :=
+	exchangeIdToBufferedChannel :=
 		map[types.ExchangeId]chan *price_fetcher.PriceFetcherSubtaskResponse{}
 	for _, exchangeId := range exchangeIds {
 		bCh := make(chan *price_fetcher.PriceFetcherSubtaskResponse, maxBufferedChannelLength)
-		exhangeIdToBufferedChannel[exchangeId] = bCh
+		exchangeIdToBufferedChannel[exchangeId] = bCh
 	}
 
-	require.Len(t, etmp.ExchangeMarketPrices, len(exchangeIds))
-	return etmp, exhangeIdToBufferedChannel
+	return etmp, exchangeIdToBufferedChannel
 }
 
 func runPriceEncoderSequentially(
 	t *testing.T,
 	exchangeId types.ExchangeId,
-	etmp *types.ExchangeToMarketPrices,
+	configs types.PricefeedMutableMarketConfigs,
+	etmp types.ExchangeToMarketPrices,
 	bCh chan *price_fetcher.PriceFetcherSubtaskResponse,
 	writes []*types.MarketPriceTimestamp,
 ) {
@@ -799,13 +818,13 @@ func runPriceEncoderSequentially(
 	}
 
 	close(bCh)
-	subTaskRunnerImpl.StartPriceEncoder(exchangeId, etmp, log.NewNopLogger(), bCh)
+	subTaskRunnerImpl.StartPriceEncoder(exchangeId, configs, etmp, log.NewNopLogger(), bCh)
 }
 
 func runPriceEncoderConcurrently(
-	t *testing.T,
 	exchangeId types.ExchangeId,
-	etmp *types.ExchangeToMarketPrices,
+	configs types.PricefeedMutableMarketConfigs,
+	etmp types.ExchangeToMarketPrices,
 	bCh chan *price_fetcher.PriceFetcherSubtaskResponse,
 	writes []*types.MarketPriceTimestamp,
 ) {
@@ -815,7 +834,7 @@ func runPriceEncoderConcurrently(
 	priceEncoderWg.Add(1)
 	go func() {
 		defer priceEncoderWg.Done()
-		subTaskRunnerImpl.StartPriceEncoder(exchangeId, etmp, log.NewNopLogger(), bCh)
+		subTaskRunnerImpl.StartPriceEncoder(exchangeId, configs, etmp, log.NewNopLogger(), bCh)
 	}()
 
 	// Start a `waitGroup` for threads that will write to the `bufferedChannel`.
@@ -845,4 +864,46 @@ func sortMarketPriceUpdateByMarketIdDescending(
 			return marketPriceUpdate[i].MarketId > marketPriceUpdate[j].MarketId
 		},
 	)
+}
+
+func genMockPricefeedMutableMarketConfigsForExchange(
+	exchangeId types.ExchangeId,
+) types.PricefeedMutableMarketConfigs {
+	mutableExchangeConfig := &types.MutableExchangeMarketConfig{
+		Id: exchangeId,
+		MarketToMarketConfig: map[types.MarketId]types.MarketConfig{
+			8: {
+				Ticker: "MARKET8-USD",
+			},
+			9: {
+				Ticker: "MARKET9-USD",
+			},
+		},
+	}
+	mutableMarketConfigs := []*types.MutableMarketConfig{
+		{
+			Id:           constants.MarketId8,
+			Pair:         "MARKET8-USD",
+			Exponent:     -9,
+			MinExchanges: 1,
+		},
+		{
+			Id:           constants.MarketId9,
+			Pair:         "MARKET9-USD",
+			Exponent:     -9,
+			MinExchanges: 1,
+		},
+	}
+	configs := &mocks.PricefeedMutableMarketConfigs{}
+	configs.On("GetExchangeMarketConfigCopy", exchangeId).Return(mutableExchangeConfig, nil)
+
+	// All possible permutations of supported markets.
+	configs.On("GetMarketConfigCopies", []types.MarketId{8, 9}).Return(mutableMarketConfigs, nil)
+	configs.On("GetMarketConfigCopies", []types.MarketId{8}).Return(mutableMarketConfigs[0:1], nil)
+	configs.On("GetMarketConfigCopies", []types.MarketId{9}).Return(mutableMarketConfigs[1:2], nil)
+	configs.On("GetMarketConfigCopies", []types.MarketId{}).Return([]*types.MutableMarketConfig{}, nil)
+
+	configs.On("AddPriceFetcher", mock.Anything).Return(nil)
+	configs.On("AddPriceEncoder", mock.Anything).Return(nil)
+	return configs
 }

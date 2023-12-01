@@ -4,7 +4,7 @@ import (
 	"testing"
 	time "time"
 
-	"github.com/dydxprotocol/v4/x/blocktime/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +23,6 @@ func TestGenesisState_Validate(t *testing.T) {
 					Durations: []time.Duration{
 						2 * time.Minute,
 					},
-					ClockDriftGracePeriodDuration: 5 * time.Second,
 				},
 			},
 			err: nil,

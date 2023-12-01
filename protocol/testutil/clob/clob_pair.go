@@ -1,8 +1,8 @@
 package clob
 
 import (
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 // MustPerpetualId is a wrapper around ClobPair.GetPerpetualId() which panics if an error is returned.
@@ -28,27 +28,9 @@ func WithStepBaseQuantums(bq satypes.BaseQuantums) ClobModifierOption {
 	}
 }
 
-func WithMinOrderBaseQuantums(bq satypes.BaseQuantums) ClobModifierOption {
-	return func(cp *clobtypes.ClobPair) {
-		cp.MinOrderBaseQuantums = bq.ToUint64()
-	}
-}
-
 func WithStatus(status clobtypes.ClobPair_Status) ClobModifierOption {
 	return func(cp *clobtypes.ClobPair) {
 		cp.Status = status
-	}
-}
-
-func WithMakerFeePpm(fee uint32) ClobModifierOption {
-	return func(cp *clobtypes.ClobPair) {
-		cp.MakerFeePpm = fee
-	}
-}
-
-func WithTakerFeePpm(fee uint32) ClobModifierOption {
-	return func(cp *clobtypes.ClobPair) {
-		cp.TakerFeePpm = fee
 	}
 }
 
@@ -70,6 +52,16 @@ func WithPerpetualMetadata(metadata *clobtypes.ClobPair_PerpetualClobMetadata) C
 	}
 }
 
+func WithPerpetualId(perpetualId uint32) ClobModifierOption {
+	return func(cp *clobtypes.ClobPair) {
+		cp.Metadata = &clobtypes.ClobPair_PerpetualClobMetadata{
+			PerpetualClobMetadata: &clobtypes.PerpetualClobMetadata{
+				PerpetualId: perpetualId,
+			},
+		}
+	}
+}
+
 func WithSpotMetadata(metadata *clobtypes.ClobPair_SpotClobMetadata) ClobModifierOption {
 	return func(cp *clobtypes.ClobPair) {
 		cp.Metadata = metadata
@@ -82,10 +74,10 @@ func WithSpotMetadata(metadata *clobtypes.ClobPair_SpotClobMetadata) ClobModifie
 // and make the requested modifications before returning the object.
 //
 // Example usage:
-// `GenerateClobPair(WithQuantumConversionExponent(25), WithTakerFeePpm(3000))`
+// `GenerateClobPair(WithQuantumConversionExponent(25))`
 // This will start with the default `ClobPair` object defined within the method and
 // return the newly-created object after overriding the values of
-// `QuantumConversionExponent` to 25 and `TakerFeePpm` to 3000.
+// `QuantumConversionExponent` to 25.
 func GenerateClobPair(optionalModifications ...ClobModifierOption) *clobtypes.ClobPair {
 	clobPair := &clobtypes.ClobPair{
 		Metadata: &clobtypes.ClobPair_PerpetualClobMetadata{
@@ -97,10 +89,7 @@ func GenerateClobPair(optionalModifications ...ClobModifierOption) *clobtypes.Cl
 		StepBaseQuantums:          5,
 		SubticksPerTick:           10,
 		QuantumConversionExponent: -8,
-		MinOrderBaseQuantums:      20,
 		Status:                    clobtypes.ClobPair_STATUS_ACTIVE,
-		MakerFeePpm:               200,
-		TakerFeePpm:               500,
 	}
 
 	for _, opt := range optionalModifications {

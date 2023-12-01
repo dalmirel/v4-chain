@@ -3,11 +3,11 @@ package events_test
 import (
 	"testing"
 
-	"github.com/dydxprotocol/v4/indexer/events"
-	v1 "github.com/dydxprotocol/v4/indexer/protocol/v1"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	v1 "github.com/dydxprotocol/v4-chain/protocol/indexer/protocol/v1"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,16 +23,26 @@ var (
 )
 
 func TestNewOrderFillEvent_Success(t *testing.T) {
-	orderFillEvent := events.NewOrderFillEvent(makerOrder, takerOrder, fillAmount, makerFee, takerFee)
+	orderFillEvent := events.NewOrderFillEvent(
+		makerOrder,
+		takerOrder,
+		fillAmount,
+		makerFee,
+		takerFee,
+		fillAmount,
+		fillAmount,
+	)
 
 	expectedOrderFillEventProto := &events.OrderFillEventV1{
 		MakerOrder: indexerMakerOrder,
 		TakerOrder: &events.OrderFillEventV1_Order{
 			Order: &indexerTakerOrder,
 		},
-		FillAmount: fillAmount.ToUint64(),
-		MakerFee:   makerFee,
-		TakerFee:   takerFee,
+		FillAmount:       fillAmount.ToUint64(),
+		MakerFee:         makerFee,
+		TakerFee:         takerFee,
+		TotalFilledMaker: fillAmount.ToUint64(),
+		TotalFilledTaker: fillAmount.ToUint64(),
 	}
 	require.Equal(t, expectedOrderFillEventProto, orderFillEvent)
 }
@@ -45,6 +55,7 @@ func TestNewLiquidationOrderFillEvent_Success(t *testing.T) {
 		fillAmount,
 		makerFee,
 		takerFee,
+		fillAmount,
 	)
 
 	expectedLiquidationOrder := events.LiquidationOrderV1{
@@ -60,9 +71,11 @@ func TestNewLiquidationOrderFillEvent_Success(t *testing.T) {
 		TakerOrder: &events.OrderFillEventV1_LiquidationOrder{
 			LiquidationOrder: &expectedLiquidationOrder,
 		},
-		FillAmount: fillAmount.ToUint64(),
-		MakerFee:   makerFee,
-		TakerFee:   takerFee,
+		FillAmount:       fillAmount.ToUint64(),
+		MakerFee:         makerFee,
+		TakerFee:         takerFee,
+		TotalFilledMaker: fillAmount.ToUint64(),
+		TotalFilledTaker: fillAmount.ToUint64(),
 	}
 	require.Equal(t, expectedOrderFillEventProto, liquidationOrderFillEvent)
 }

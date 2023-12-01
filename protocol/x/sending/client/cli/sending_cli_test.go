@@ -4,22 +4,20 @@ package cli_test
 
 import (
 	"fmt"
+	"github.com/dydxprotocol/v4-chain/protocol/app/stoppable"
 
 	"math/big"
 	"testing"
 
-	networktestutil "github.com/cosmos/cosmos-sdk/testutil/network"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/app"
-	daemonflags "github.com/dydxprotocol/v4/daemons/flags"
-	"github.com/dydxprotocol/v4/testutil/appoptions"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/network"
-	epochstypes "github.com/dydxprotocol/v4/x/epochs/types"
-	testutil "github.com/dydxprotocol/v4/x/sending/client/testutil"
-	"github.com/dydxprotocol/v4/x/sending/types"
-	sa_testutil "github.com/dydxprotocol/v4/x/subaccounts/client/testutil"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/app"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/network"
+	epochstypes "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types"
+	testutil "github.com/dydxprotocol/v4-chain/protocol/x/sending/client/testutil"
+	"github.com/dydxprotocol/v4-chain/protocol/x/sending/types"
+	sa_testutil "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/client/testutil"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -50,15 +48,11 @@ func (s *SendingIntegrationTestSuite) SetupTest() {
 	// Generated from the above Mnemonic.
 	s.validatorAddress = constants.AliceAccAddress
 
-	appOptions := appoptions.NewFakeAppOptions()
-
 	// Configure test network.
-	s.cfg = network.DefaultConfig(&network.NetworkConfigOptions{
-		AppOptions: appOptions,
-		OnNewApp: func(val networktestutil.ValidatorI) {
-			// Disable the Price daemon in the integration tests.
-			appOptions.Set(daemonflags.FlagPriceDaemonEnabled, false)
-		},
+	s.cfg = network.DefaultConfig(nil)
+
+	s.T().Cleanup(func() {
+		stoppable.StopServices(s.T(), s.cfg.GRPCAddress)
 	})
 
 	s.cfg.Mnemonics = append(s.cfg.Mnemonics, validatorMnemonic)

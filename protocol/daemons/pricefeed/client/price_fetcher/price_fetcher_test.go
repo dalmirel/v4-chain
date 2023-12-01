@@ -1,18 +1,19 @@
 package price_fetcher
 
 import (
-	"cosmossdk.io/math"
 	"errors"
-	"fmt"
-	pricefeed_cosntants "github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	"github.com/dydxprotocol/v4/testutil/daemons/pricefeed"
+	daemontypes "github.com/dydxprotocol/v4-chain/protocol/daemons/types"
 	"testing"
 
+	"cosmossdk.io/math"
+	pricefeed_cosntants "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/daemons/pricefeed"
+
 	"github.com/cometbft/cometbft/libs/log"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -141,7 +142,7 @@ func TestRunTaskLoop(t *testing.T) {
 
 			// Run sub-task a specified number of iterations.
 			for i := 0; i < taskLoopIterations; i++ {
-				pf.RunTaskLoop(&lib.RequestHandlerImpl{})
+				pf.RunTaskLoop(&daemontypes.RequestHandlerImpl{})
 			}
 
 			// Will hang until tests timeout if bCh is not full.
@@ -173,7 +174,7 @@ func TestRunTaskLoop(t *testing.T) {
 			marketsPerCall := 1
 			if tc.queryDetails.IsMultiMarket {
 				expectedQueries = taskLoopIterations
-				marketsPerCall = len(tc.mutableExchangeConfig.MarketToTicker)
+				marketsPerCall = len(tc.mutableExchangeConfig.MarketToMarketConfig)
 			}
 			queryHandler.AssertNumberOfCalls(t, "Query", expectedQueries)
 			for i := 0; i < len(tc.expectedMarketIdsCalled); i = i + marketsPerCall {
@@ -519,7 +520,7 @@ func TestUpdateMutableExchangeConfig_ProducesExpectedPrices(t *testing.T) {
 
 			// Run sub-task a specified number of iterations.
 			for i := 0; i < taskLoopIterations; i++ {
-				pf.RunTaskLoop(&lib.RequestHandlerImpl{})
+				pf.RunTaskLoop(&daemontypes.RequestHandlerImpl{})
 			}
 
 			// No race conditions should affect the market output of the previous or following task loops.
@@ -528,7 +529,7 @@ func TestUpdateMutableExchangeConfig_ProducesExpectedPrices(t *testing.T) {
 
 			// Run sub-task a specified number of iterations.
 			for i := 0; i < taskLoopIterations; i++ {
-				go pf.RunTaskLoop(&lib.RequestHandlerImpl{})
+				go pf.RunTaskLoop(&daemontypes.RequestHandlerImpl{})
 			}
 
 			// Will hang until tests timeout if bCh is not full.
@@ -558,8 +559,8 @@ func TestUpdateMutableExchangeConfig_ProducesExpectedPrices(t *testing.T) {
 			if tc.isMultiMarket {
 				// For multi market exchanges, the query handler should be called once per task loop, and each
 				// query should be for all markets supported by the exchange at that time.
-				initialNumMarkets := len(tc.initialMutableExchangeConfig.MarketToTicker)
-				updateNumMarkets := len(tc.updateMutableExchangeConfig.MarketToTicker)
+				initialNumMarkets := len(tc.initialMutableExchangeConfig.MarketToMarketConfig)
+				updateNumMarkets := len(tc.updateMutableExchangeConfig.MarketToMarketConfig)
 
 				indexPtr := 0
 				if initialNumMarkets > 0 {
@@ -658,9 +659,6 @@ func TestRunSubTask_Mixed(t *testing.T) {
 			expectedPrices: []*types.MarketPriceTimestamp{
 				constants.Market8_TimeT_Price1,
 			},
-			expectedErrors: []error{
-				fmt.Errorf("Market 8 unavailable on exchange 'Exchange1' (%w)", tickerNotAvailable),
-			},
 		},
 	}
 
@@ -670,7 +668,7 @@ func TestRunSubTask_Mixed(t *testing.T) {
 			mutableExchangeMarketConfig := constants.Exchange1_1Markets_MutableExchangeMarketConfig
 			mutableMarketConfigs := constants.MutableMarketConfigs_1Markets
 			mockExchangeQueryHandler := &mocks.ExchangeQueryHandler{}
-			rh := &lib.RequestHandlerImpl{}
+			rh := &daemontypes.RequestHandlerImpl{}
 
 			mockExchangeQueryHandler.On(
 				"Query",
@@ -699,7 +697,7 @@ func TestRunSubTask_Mixed(t *testing.T) {
 
 			// We just need a valid input that matches the mock signature.
 			pf.runSubTask(
-				&lib.RequestHandlerImpl{},
+				&daemontypes.RequestHandlerImpl{},
 				mutableExchangeMarketConfig.GetMarketIds(),
 				pf.getTaskLoopDefinition(),
 			)
@@ -776,7 +774,7 @@ func mockSingleMarketCalls(mockExchangeQueryHandler *mocks.ExchangeQueryHandler)
 				mock.AnythingOfType("*types.ExchangeQueryDetails"),
 				mock.AnythingOfType("*types.MutableExchangeMarketConfig"),
 				[]types.MarketId{marketId},
-				&lib.RequestHandlerImpl{},
+				&daemontypes.RequestHandlerImpl{},
 				generateMarketExponentsMap(initialMarketConfigs),
 			).Return([]*types.MarketPriceTimestamp{priceTimestamp}, nil, nil)
 		}
@@ -800,7 +798,7 @@ func mockMultiMarketCall(
 		mock.AnythingOfType("*types.ExchangeQueryDetails"),
 		mock.AnythingOfType("*types.MutableExchangeMarketConfig"),
 		markets,
-		&lib.RequestHandlerImpl{},
+		&daemontypes.RequestHandlerImpl{},
 		generateMarketExponentsMap(mutableMarketConfigs),
 	).Return(prices, nil, nil)
 }
@@ -836,7 +834,7 @@ func assertQueryHandlerCalledWithMarkets(
 		mock.AnythingOfType("*types.ExchangeQueryDetails"),
 		mock.AnythingOfType("*types.MutableExchangeMarketConfig"),
 		markets,
-		&lib.RequestHandlerImpl{},
+		&daemontypes.RequestHandlerImpl{},
 		generateMarketExponentsMap(marketConfigs),
 	)
 }

@@ -3,16 +3,23 @@ package indexer_manager
 import (
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/indexer/msgsender"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/msgsender"
 )
 
 type IndexerEventManager interface {
 	Enabled() bool
-	AddTxnEvent(ctx sdk.Context, subType string, data string)
+	AddTxnEvent(ctx sdk.Context, subType string, version uint32, dataByes []byte)
 	SendOffchainData(message msgsender.Message)
 	SendOnchainData(block *IndexerTendermintBlock)
 	ProduceBlock(ctx sdk.Context) *IndexerTendermintBlock
-	AddBlockEvent(ctx sdk.Context, subType string, data string, blockEvent IndexerTendermintEvent_BlockEvent)
+	AddBlockEvent(
+		ctx sdk.Context,
+		subType string,
+		blockEvent IndexerTendermintEvent_BlockEvent,
+		version uint32,
+		dataBytes []byte,
+	)
+	ClearEvents(ctx sdk.Context)
 }
 
 // Ensure the `IndexerEventManager` interface is implemented at compile time.
@@ -61,10 +68,20 @@ func (i *indexerEventManagerImpl) SendOnchainData(block *IndexerTendermintBlock)
 func (i *indexerEventManagerImpl) AddTxnEvent(
 	ctx sdk.Context,
 	subType string,
-	data string,
+	version uint32,
+	dataBytes []byte,
 ) {
 	if i.indexerMessageSender.Enabled() {
-		addTxnEvent(ctx, subType, data, i.indexerEventsTransientStoreKey)
+		addTxnEvent(ctx, subType, version, i.indexerEventsTransientStoreKey, dataBytes)
+	}
+}
+
+// ClearEvents clears all events in the context's transient store of indexer events.
+func (i *indexerEventManagerImpl) ClearEvents(
+	ctx sdk.Context,
+) {
+	if i.indexerMessageSender.Enabled() {
+		clearEvents(ctx, i.indexerEventsTransientStoreKey)
 	}
 }
 
@@ -72,11 +89,12 @@ func (i *indexerEventManagerImpl) AddTxnEvent(
 func (i *indexerEventManagerImpl) AddBlockEvent(
 	ctx sdk.Context,
 	subType string,
-	data string,
 	blockEvent IndexerTendermintEvent_BlockEvent,
+	version uint32,
+	dataBytes []byte,
 ) {
 	if i.indexerMessageSender.Enabled() {
-		addBlockEvent(ctx, subType, data, i.indexerEventsTransientStoreKey, blockEvent)
+		addBlockEvent(ctx, subType, i.indexerEventsTransientStoreKey, blockEvent, version, dataBytes)
 	}
 }
 

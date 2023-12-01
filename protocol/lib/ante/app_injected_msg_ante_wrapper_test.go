@@ -8,11 +8,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	appmsgs "github.com/dydxprotocol/v4/app/msgs"
-	"github.com/dydxprotocol/v4/lib/ante"
-	"github.com/dydxprotocol/v4/mocks"
-	testante "github.com/dydxprotocol/v4/testutil/ante"
-	testmsgs "github.com/dydxprotocol/v4/testutil/msgs"
+	appmsgs "github.com/dydxprotocol/v4-chain/protocol/app/msgs"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/ante"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	testante "github.com/dydxprotocol/v4-chain/protocol/testutil/ante"
+	testmsgs "github.com/dydxprotocol/v4-chain/protocol/testutil/msgs"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -86,9 +86,6 @@ func TestValidateMsgType_AppInjectedMsg(t *testing.T) {
 		}
 	}
 
-	// (2 * num of "addAppInjectedMsg=true" * num of app-injected msgs) + num of "addAppInjectedMsg=false")
-	// (2 * 1 * 5) + 3 = 11
-	require.Len(t, allTestCases, 13)
 	for _, tc := range allTestCases {
 		runTest(t, tc.name, tc.msgs, tc.expectSkip)
 	}

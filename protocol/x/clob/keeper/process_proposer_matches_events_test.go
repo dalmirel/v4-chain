@@ -4,12 +4,12 @@ import (
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/testutil/tracer"
-	"github.com/dydxprotocol/v4/x/clob/keeper"
-	"github.com/dydxprotocol/v4/x/clob/types"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/tracer"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -28,18 +28,17 @@ func TestSetProcessProposerMatchesEvents(t *testing.T) {
 				k.MustSetProcessProposerMatchesEvents(
 					ctx,
 					types.ProcessProposerMatchesEvents{
-						PlacedStatefulOrders: []types.Order{
-							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15,
-							constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20,
-							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20,
-							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10,
+						PlacedLongTermOrderIds: []types.OrderId{
+							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
+							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20.OrderId,
+							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 						},
 						ExpiredStatefulOrderIds: []types.OrderId{
 							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
 							constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20.OrderId,
 							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 						},
-						OrdersIdsFilledInLastBlock: []types.OrderId{
+						OrderIdsFilledInLastBlock: []types.OrderId{
 							constants.LongTermOrder_Alice_Num0_Id1_Clob1_Sell65_Price15_GTBT25.OrderId,
 							constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20.OrderId,
 						},
@@ -48,18 +47,17 @@ func TestSetProcessProposerMatchesEvents(t *testing.T) {
 			},
 
 			expectedProcessProposerMatchesEvents: types.ProcessProposerMatchesEvents{
-				PlacedStatefulOrders: []types.Order{
-					constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15,
-					constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20,
-					constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20,
-					constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10,
+				PlacedLongTermOrderIds: []types.OrderId{
+					constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
+					constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20.OrderId,
+					constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 				},
 				ExpiredStatefulOrderIds: []types.OrderId{
 					constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
 					constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20.OrderId,
 					constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 				},
-				OrdersIdsFilledInLastBlock: []types.OrderId{
+				OrderIdsFilledInLastBlock: []types.OrderId{
 					constants.LongTermOrder_Alice_Num0_Id1_Clob1_Sell65_Price15_GTBT25.OrderId,
 					constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20.OrderId,
 				},
@@ -78,9 +76,9 @@ func TestSetProcessProposerMatchesEvents(t *testing.T) {
 				k.MustSetProcessProposerMatchesEvents(
 					ctx,
 					types.ProcessProposerMatchesEvents{
-						PlacedStatefulOrders:       []types.Order{},
-						ExpiredStatefulOrderIds:    []types.OrderId{},
-						OrdersIdsFilledInLastBlock: []types.OrderId{},
+						PlacedLongTermOrderIds:    []types.OrderId{},
+						ExpiredStatefulOrderIds:   []types.OrderId{},
+						OrderIdsFilledInLastBlock: []types.OrderId{},
 					},
 				)
 			},
@@ -93,18 +91,17 @@ func TestSetProcessProposerMatchesEvents(t *testing.T) {
 				k.MustSetProcessProposerMatchesEvents(
 					ctx,
 					types.ProcessProposerMatchesEvents{
-						PlacedStatefulOrders: []types.Order{
-							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15,
-							constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20,
-							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20,
-							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10,
+						PlacedLongTermOrderIds: []types.OrderId{
+							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
+							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20.OrderId,
+							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 						},
 						ExpiredStatefulOrderIds: []types.OrderId{
 							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
 							constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20.OrderId,
 							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 						},
-						OrdersIdsFilledInLastBlock: []types.OrderId{
+						OrderIdsFilledInLastBlock: []types.OrderId{
 							constants.LongTermOrder_Alice_Num0_Id1_Clob1_Sell65_Price15_GTBT25.OrderId,
 							constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT20.OrderId,
 						},
@@ -114,15 +111,15 @@ func TestSetProcessProposerMatchesEvents(t *testing.T) {
 				k.MustSetProcessProposerMatchesEvents(
 					ctx,
 					types.ProcessProposerMatchesEvents{
-						PlacedStatefulOrders: []types.Order{
-							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10,
-							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15,
+						PlacedLongTermOrderIds: []types.OrderId{
+							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
+							constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
 						},
 						ExpiredStatefulOrderIds: []types.OrderId{
 							constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 							constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20.OrderId,
 						},
-						OrdersIdsFilledInLastBlock: []types.OrderId{
+						OrderIdsFilledInLastBlock: []types.OrderId{
 							constants.LongTermOrder_Alice_Num0_Id1_Clob1_Sell65_Price15_GTBT25.OrderId,
 						},
 					},
@@ -130,15 +127,15 @@ func TestSetProcessProposerMatchesEvents(t *testing.T) {
 			},
 
 			expectedProcessProposerMatchesEvents: types.ProcessProposerMatchesEvents{
-				PlacedStatefulOrders: []types.Order{
-					constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10,
-					constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15,
+				PlacedLongTermOrderIds: []types.OrderId{
+					constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
+					constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15.OrderId,
 				},
 				ExpiredStatefulOrderIds: []types.OrderId{
 					constants.LongTermOrder_Bob_Num0_Id0_Clob0_Buy25_Price30_GTBT10.OrderId,
 					constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20.OrderId,
 				},
-				OrdersIdsFilledInLastBlock: []types.OrderId{
+				OrderIdsFilledInLastBlock: []types.OrderId{
 					constants.LongTermOrder_Alice_Num0_Id1_Clob1_Sell65_Price15_GTBT25.OrderId,
 				},
 			},
@@ -169,7 +166,7 @@ func TestSetProcessProposerMatchesEvents(t *testing.T) {
 
 			expectedMultistoreWrites := make([]string, tc.expectedNumWrites)
 			for i := 0; i < int(tc.expectedNumWrites); i++ {
-				expectedMultistoreWrites[i] = "ProcessProposerMatchesEvents/value"
+				expectedMultistoreWrites[i] = types.ProcessProposerMatchesEventsKey
 			}
 
 			traceDecoder.RequireKeyPrefixWrittenInSequence(

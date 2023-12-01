@@ -3,10 +3,10 @@
 package mocks
 
 import (
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 	mock "github.com/stretchr/testify/mock"
 
-	process "github.com/dydxprotocol/v4/app/process"
+	process "github.com/dydxprotocol/v4-chain/protocol/app/process"
 
 	types "github.com/cosmos/cosmos-sdk/types"
 )
@@ -19,6 +19,20 @@ type ProcessClobKeeper struct {
 // RecordMevMetrics provides a mock function with given fields: ctx, stakingKeeper, perpetualKeeper, msgProposedOperations
 func (_m *ProcessClobKeeper) RecordMevMetrics(ctx types.Context, stakingKeeper process.ProcessStakingKeeper, perpetualKeeper process.ProcessPerpetualKeeper, msgProposedOperations *clobtypes.MsgProposedOperations) {
 	_m.Called(ctx, stakingKeeper, perpetualKeeper, msgProposedOperations)
+}
+
+// RecordMevMetricsIsEnabled provides a mock function with given fields:
+func (_m *ProcessClobKeeper) RecordMevMetricsIsEnabled() bool {
+	ret := _m.Called()
+
+	var r0 bool
+	if rf, ok := ret.Get(0).(func() bool); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	return r0
 }
 
 type mockConstructorTestingTNewProcessClobKeeper interface {

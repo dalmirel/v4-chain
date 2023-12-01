@@ -2,18 +2,20 @@ package keeper
 
 import (
 	"fmt"
+	"math/big"
 	"time"
 
-	gometrics "github.com/armon/go-metrics"
+	errorsmod "cosmossdk.io/errors"
+
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	indexerevents "github.com/dydxprotocol/v4/indexer/events"
-	"github.com/dydxprotocol/v4/indexer/indexer_manager"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/lib/metrics"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	indexershared "github.com/dydxprotocol/v4-chain/protocol/indexer/shared"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 // ProcessProposerOperations updates on-chain state given an []OperationRaw operations queue
@@ -21,7 +23,6 @@ import (
 // queue. If all validation passes, the operations queue is written to state.
 // The following operations are written to state:
 // - Order Matches, Liquidation Matches, Deleveraging Matches
-// If all of the state writes succeed, offchain events for the matches are emitted.
 func (k Keeper) ProcessProposerOperations(
 	ctx sdk.Context,
 	rawOperations []types.OperationRaw,
@@ -30,13 +31,13 @@ func (k Keeper) ProcessProposerOperations(
 	lib.AssertDeliverTxMode(ctx)
 	defer telemetry.ModuleMeasureSince(types.ModuleName, time.Now(), metrics.ProcessOperations)
 
-	// Validates RawOperations and transforms them into InternalOperations to be used internally by memclob.
+	// Stateless validation of RawOperations and transforms them into InternalOperations to be used internally by memclob.
 	operations, err := types.ValidateAndTransformRawOperations(ctx, rawOperations, k.txDecoder, k.antehandler)
 	if err != nil {
-		return sdkerrors.Wrapf(types.ErrInvalidMsgProposedOperations, "Error: %+v", err)
+		return errorsmod.Wrapf(types.ErrInvalidMsgProposedOperations, "Error: %+v", err)
 	}
 
-	ctx.Logger().Debug(
+	k.Logger(ctx).Debug(
 		"Processing operations queue",
 		"operationsQueue",
 		types.GetInternalOperationsQueueTextString(operations),
@@ -44,26 +45,16 @@ func (k Keeper) ProcessProposerOperations(
 		ctx.BlockHeight(),
 	)
 
-	// Write results of the operations queue to state.
-	offchainUpdates, err := k.ProcessInternalOperations(ctx, operations)
-	if err != nil {
+	// Write results of the operations queue to state. Performs stateful validation as well.
+	if err := k.ProcessInternalOperations(ctx, operations); err != nil {
 		return err
 	}
-
-	// Send off-chain updates generated from matching the orders. `SendOffchainMessages` enqueues the
-	// the messages to be sent in a channel and should be non-blocking.
-	// TODO(IND-146) Only onchain events are needed after this ticket is finished.
-	k.SendOffchainMessages(
-		offchainUpdates,
-		nil,
-		metrics.SendProposedOperationsOffchainUpdates,
-	)
 
 	// Collect the list of order ids filled and set the field in the `ProcessProposerMatchesEvents` object.
 	processProposerMatchesEvents := k.GenerateProcessProposerMatchesEvents(ctx, operations)
 
 	// Remove fully filled orders from state.
-	for _, orderId := range processProposerMatchesEvents.OrdersIdsFilledInLastBlock {
+	for _, orderId := range processProposerMatchesEvents.OrderIdsFilledInLastBlock {
 		if orderId.IsShortTermOrder() {
 			continue
 		}
@@ -84,9 +75,10 @@ func (k Keeper) ProcessProposerOperations(
 				telemetry.IncrCounterWithLabels(
 					[]string{types.ModuleName, metrics.ProcessOperations, metrics.StatefulOrderRemoved, metrics.Count},
 					1,
-					[]gometrics.Label{
+					append(
+						orderPlacement.Order.GetOrderLabels(),
 						metrics.GetLabelForStringValue(metrics.RemovalReason, types.OrderRemoval_REMOVAL_REASON_FULLY_FILLED.String()),
-					},
+					),
 				)
 
 				processProposerMatchesEvents.RemovedStatefulOrderIds = append(
@@ -104,11 +96,16 @@ func (k Keeper) ProcessProposerOperations(
 		processProposerMatchesEvents,
 	)
 
+	// Emit stats about the proposed operations.
+	operationsStats := types.StatMsgProposedOperations(rawOperations)
+	operationsStats.EmitStats(metrics.DeliverTx)
+
 	return nil
 }
 
 // ProcessInternalOperations takes in an InternalOperations slice and writes all relevant
-// operations to state. This function assumes that the operations have passed all validation.
+// operations to state. This function assumes that the operations have passed all stateless validation.
+// This function will perform stateful validation as it processes operations.
 // The following operations modify state:
 // - Order Matches, Liquidation Matches, Deleveraging Matches
 // - Order Removals
@@ -119,41 +116,49 @@ func (k Keeper) ProcessProposerOperations(
 func (k Keeper) ProcessInternalOperations(
 	ctx sdk.Context,
 	operations []types.InternalOperation,
-) (*types.OffchainUpdates, error) {
+) error {
 	// Collect all the short-term orders placed for subsequent lookups.
+	// All short term orders in this map have passed validation.
 	placedShortTermOrders := make(map[types.OrderId]types.Order, 0)
-	offchainUpdates := types.NewOffchainUpdates()
 
 	// Write the matches to state if all stateful validation passes.
 	for _, operation := range operations {
+		if err := k.validateInternalOperationAgainstClobPairStatus(ctx, operation); err != nil {
+			return err
+		}
+
 		switch castedOperation := operation.Operation.(type) {
 		case *types.InternalOperation_Match:
 			clobMatch := castedOperation.Match
-			matchOffchainUpdates, err := k.PersistMatchToState(ctx, clobMatch, placedShortTermOrders)
-			if err != nil {
-				return nil, sdkerrors.Wrapf(
+			if err := k.PersistMatchToState(ctx, clobMatch, placedShortTermOrders); err != nil {
+				return errorsmod.Wrapf(
 					err,
 					"ProcessInternalOperations: Failed to process clobMatch: %+v",
 					clobMatch,
 				)
 			}
-			offchainUpdates.Append(matchOffchainUpdates)
 		case *types.InternalOperation_ShortTermOrderPlacement:
 			order := castedOperation.ShortTermOrderPlacement.GetOrder()
+			if err := k.PerformStatefulOrderValidation(
+				ctx,
+				&order,
+				lib.MustConvertIntegerToUint32(ctx.BlockHeight()),
+				false,
+			); err != nil {
+				return err
+			}
 			placedShortTermOrders[order.GetOrderId()] = order
 		case *types.InternalOperation_OrderRemoval:
-			// Remove the stateful order from state.
-			// TODO(CLOB-85): Perform additional validation on the order removal.
 			orderRemoval := castedOperation.OrderRemoval
-			k.MustRemoveStatefulOrder(ctx, orderRemoval.GetOrderId())
 
-			telemetry.IncrCounterWithLabels(
-				[]string{types.ModuleName, metrics.ProcessOperations, metrics.StatefulOrderRemoved, metrics.Count},
-				1,
-				[]gometrics.Label{
-					metrics.GetLabelForStringValue(metrics.RemovalReason, orderRemoval.GetRemovalReason().String()),
-				},
-			)
+			if err := k.PersistOrderRemovalToState(ctx, *orderRemoval); err != nil {
+				return errorsmod.Wrapf(
+					types.ErrInvalidOrderRemoval,
+					"Order Removal (%+v) invalid. Error: %+v",
+					*orderRemoval,
+					err,
+				)
+			}
 		case *types.InternalOperation_PreexistingStatefulOrder:
 			// When we fetch operations to propose, preexisting stateful orders are not included
 			// in the operations queue.
@@ -172,42 +177,35 @@ func (k Keeper) ProcessInternalOperations(
 			)
 		}
 	}
-	return offchainUpdates, nil
+	return nil
 }
 
 // PersistMatchToState takes in an ClobMatch and writes the match to state. A map of orderId
 // to Order is required to fetch the whole Order object for short term orders.
-// Function will panic if any orderId referenced in clobMatch cannot be found.
 func (k Keeper) PersistMatchToState(
 	ctx sdk.Context,
 	clobMatch *types.ClobMatch,
 	ordersMap map[types.OrderId]types.Order,
-) (*types.OffchainUpdates, error) {
-	offchainUpdates := types.NewOffchainUpdates()
-
+) error {
 	switch castedMatch := clobMatch.Match.(type) {
 	case *types.ClobMatch_MatchOrders:
-		matchOffchainUpdates, err := k.PersistMatchOrdersToState(ctx, castedMatch.MatchOrders, ordersMap)
-		if err != nil {
-			return nil, err
+		if err := k.PersistMatchOrdersToState(ctx, castedMatch.MatchOrders, ordersMap); err != nil {
+			return err
 		}
-		offchainUpdates.Append(matchOffchainUpdates)
 	case *types.ClobMatch_MatchPerpetualLiquidation:
-		liquidationOffchainEvents, err := k.PersistMatchLiquidationToState(
+		if err := k.PersistMatchLiquidationToState(
 			ctx,
 			castedMatch.MatchPerpetualLiquidation,
 			ordersMap,
-		)
-		if err != nil {
-			return nil, err
+		); err != nil {
+			return err
 		}
-		offchainUpdates.Append(liquidationOffchainEvents)
 	case *types.ClobMatch_MatchPerpetualDeleveraging:
 		if err := k.PersistMatchDeleveragingToState(
 			ctx,
 			castedMatch.MatchPerpetualDeleveraging,
 		); err != nil {
-			return nil, err
+			return err
 		}
 	default:
 		panic(
@@ -217,23 +215,263 @@ func (k Keeper) PersistMatchToState(
 			),
 		)
 	}
-	return offchainUpdates, nil
+	return nil
+}
+
+// statUnverifiedOrderRemoval increments the unverified order removal counter
+// and the base quantums counter for the order to be removed.
+func (k Keeper) statUnverifiedOrderRemoval(
+	ctx sdk.Context,
+	orderRemoval types.OrderRemoval,
+	orderToRemove types.Order,
+) {
+	proposerConsAddress := sdk.ConsAddress(ctx.BlockHeader().ProposerAddress)
+	telemetry.IncrCounterWithLabels(
+		[]string{types.ModuleName, metrics.ProcessOperations, metrics.UnverifiedStatefulOrderRemoval, metrics.Count},
+		1,
+		append(
+			orderRemoval.OrderId.GetOrderIdLabels(),
+			metrics.GetLabelForStringValue(metrics.RemovalReason, orderRemoval.GetRemovalReason().String()),
+			metrics.GetLabelForStringValue(metrics.Proposer, proposerConsAddress.String()),
+		),
+	)
+	telemetry.IncrCounterWithLabels(
+		[]string{types.ModuleName, metrics.ProcessOperations, metrics.UnverifiedStatefulOrderRemoval, metrics.BaseQuantums},
+		float32(orderToRemove.Quantums),
+		append(
+			orderRemoval.OrderId.GetOrderIdLabels(),
+			metrics.GetLabelForStringValue(metrics.RemovalReason, orderRemoval.GetRemovalReason().String()),
+			metrics.GetLabelForStringValue(metrics.Proposer, proposerConsAddress.String()),
+		),
+	)
+}
+
+// PersistOrderRemovalToState takes in an OrderRemoval, statefully validates it according to
+// RemovalReason, and writes the removal to state.
+func (k Keeper) PersistOrderRemovalToState(
+	ctx sdk.Context,
+	orderRemoval types.OrderRemoval,
+) error {
+	orderIdToRemove := orderRemoval.GetOrderId()
+	orderIdToRemove.MustBeStatefulOrder()
+
+	// Order removals are always for long-term orders which must exist or conditional orders
+	// which must be triggered.
+	orderToRemove, err := k.FetchOrderFromOrderId(ctx, orderIdToRemove, nil)
+	if err != nil {
+		return err
+	}
+
+	// Statefully validate that the removal reason is valid.
+	switch removalReason := orderRemoval.RemovalReason; removalReason {
+	case types.OrderRemoval_REMOVAL_REASON_UNDERCOLLATERALIZED:
+		k.statUnverifiedOrderRemoval(ctx, orderRemoval, orderToRemove)
+		// TODO (CLOB-877) - These validations are commented out because margin requirements can be non-linear.
+		// For the collateralization check, use the remaining amount of the order that is resting on the book.
+		// remainingAmount, hasRemainingAmount := k.MemClob.GetOrderRemainingAmount(ctx, orderToRemove)
+		// if !hasRemainingAmount {
+		// 	return types.ErrOrderFullyFilled
+		// }
+
+		// pendingOpenOrder := types.PendingOpenOrder{
+		// 	RemainingQuantums: remainingAmount,
+		// 	IsBuy:             orderToRemove.IsBuy(),
+		// 	Subticks:          orderToRemove.GetOrderSubticks(),
+		// 	ClobPairId:        orderToRemove.GetClobPairId(),
+		// }
+
+		// // Temporarily construct the subaccountOpenOrders with a single PendingOpenOrder.
+		// subaccountOpenOrders := map[satypes.SubaccountId][]types.PendingOpenOrder{
+		// 	orderIdToRemove.SubaccountId: {
+		// 		pendingOpenOrder,
+		// 	},
+		// }
+
+		// // TODO(DEC-1896): AddOrderToOrderbookCollatCheck should accept a single PendingOpenOrder as a
+		// // parameter rather than the subaccountOpenOrders map.
+		// _, successPerSubaccountUpdate := k.AddOrderToOrderbookCollatCheck(
+		// 	ctx,
+		// 	orderToRemove.GetClobPairId(),
+		// 	subaccountOpenOrders,
+		// )
+		// if successPerSubaccountUpdate[orderIdToRemove.SubaccountId].IsSuccess() {
+		// 	return errorsmod.Wrapf(
+		// 		types.ErrInvalidOrderRemoval,
+		// 		"Order Removal (%+v) invalid. Order passes collateralization check.",
+		// 		orderRemoval,
+		// 	)
+		// }
+	case types.OrderRemoval_REMOVAL_REASON_POST_ONLY_WOULD_CROSS_MAKER_ORDER:
+		// TODO (CLOB-877)
+		k.statUnverifiedOrderRemoval(ctx, orderRemoval, orderToRemove)
+
+		// The order should be post-only
+		if orderToRemove.TimeInForce != types.Order_TIME_IN_FORCE_POST_ONLY {
+			return errorsmod.Wrap(
+				types.ErrUnexpectedTimeInForce,
+				"Order is not post-only.",
+			)
+		}
+	case types.OrderRemoval_REMOVAL_REASON_INVALID_SELF_TRADE:
+		// TODO (CLOB-877)
+		k.statUnverifiedOrderRemoval(ctx, orderRemoval, orderToRemove)
+	case types.OrderRemoval_REMOVAL_REASON_CONDITIONAL_FOK_COULD_NOT_BE_FULLY_FILLED:
+		// TODO (CLOB-877)
+		k.statUnverifiedOrderRemoval(ctx, orderRemoval, orderToRemove)
+
+		// The order should be FOK
+		if orderToRemove.TimeInForce != types.Order_TIME_IN_FORCE_FILL_OR_KILL {
+			return errorsmod.Wrap(
+				types.ErrUnexpectedTimeInForce,
+				"Order is not fill-or-kill.",
+			)
+		}
+
+		// The order should not be fully filled.
+		_, hasRemainingAmount := k.MemClob.GetOrderRemainingAmount(ctx, orderToRemove)
+		if !hasRemainingAmount {
+			return errorsmod.Wrap(
+				types.ErrOrderFullyFilled,
+				"Fill-or-kill order is fully filled.",
+			)
+		}
+	case types.OrderRemoval_REMOVAL_REASON_CONDITIONAL_IOC_WOULD_REST_ON_BOOK:
+		// TODO (CLOB-877)
+		k.statUnverifiedOrderRemoval(ctx, orderRemoval, orderToRemove)
+
+		// The order should be IOC.
+		if orderToRemove.TimeInForce != types.Order_TIME_IN_FORCE_IOC {
+			return errorsmod.Wrap(
+				types.ErrUnexpectedTimeInForce,
+				"Order is not immediate-or-cancel.",
+			)
+		}
+
+		// The order should not be fully filled.
+		_, hasRemainingAmount := k.MemClob.GetOrderRemainingAmount(ctx, orderToRemove)
+		if !hasRemainingAmount {
+			return errorsmod.Wrapf(
+				types.ErrOrderFullyFilled,
+				"Immediate-or-cancel order is fully filled.",
+			)
+		}
+	case types.OrderRemoval_REMOVAL_REASON_FULLY_FILLED:
+		// The order should be fully filled.
+		remainingAmount, hasRemainingAmount := k.MemClob.GetOrderRemainingAmount(ctx, orderToRemove)
+		if hasRemainingAmount {
+			return errorsmod.Wrapf(
+				types.ErrOrderHasRemainingSize,
+				"Fill amount (%+v) and total size (%+v).",
+				remainingAmount,
+				orderToRemove.GetBaseQuantums(),
+			)
+		}
+	// TODO - uncomment when reduce only orders are enabled. Order Removals of this type will fail ValidateBasic.
+	// case types.OrderRemoval_REMOVAL_REASON_INVALID_REDUCE_ONLY:
+	// 	if !orderToRemove.IsReduceOnly() {
+	// 		return errorsmod.Wrapf(
+	// 			types.ErrInvalidOrderRemoval,
+	// 			"Order Removal (%+v) invalid. Order must be reduce only.",
+	// 			orderRemoval,
+	// 		)
+	// 	}
+
+	// 	// The reduce-only order must increase or change the side of the position to trigger removal.
+	// 	currentPositionSize := k.GetStatePosition(
+	// 		ctx,
+	// 		orderIdToRemove.SubaccountId,
+	// 		orderToRemove.GetClobPairId(),
+	// 	)
+	// 	orderQuantumsToFill := orderToRemove.GetBigQuantums()
+
+	// 	orderFillWouldIncreasePositionSize := orderQuantumsToFill.Sign() == currentPositionSize.Sign()
+
+	// 	newPositionSize := new(big.Int).Add(currentPositionSize, orderQuantumsToFill)
+	// 	orderChangedSide := currentPositionSize.Sign()*newPositionSize.Sign() == -1
+	// 	if !orderFillWouldIncreasePositionSize && !orderChangedSide {
+	// 		return errorsmod.Wrapf(
+	// 			types.ErrInvalidOrderRemoval,
+	// 			"Order Removal (%+v) invalid. Order fill must increase position size or change side.",
+	// 			orderRemoval,
+	// 		)
+	// 	}
+	default:
+		return errorsmod.Wrapf(
+			types.ErrInvalidOrderRemovalReason,
+			"PersistOrderRemovalToState: Unrecognized order removal type",
+		)
+	}
+
+	// Remove the stateful order from state.
+	k.MustRemoveStatefulOrder(ctx, orderIdToRemove)
+
+	// Emit an on-chain indexer event for Stateful Order Removal.
+	k.GetIndexerEventManager().AddTxnEvent(
+		ctx,
+		indexerevents.SubtypeStatefulOrder,
+		indexerevents.StatefulOrderEventVersion,
+		indexer_manager.GetBytes(
+			indexerevents.NewStatefulOrderRemovalEvent(
+				orderIdToRemove,
+				indexershared.ConvertOrderRemovalReasonToIndexerOrderRemovalReason(
+					orderRemoval.RemovalReason,
+				),
+			),
+		),
+	)
+
+	telemetry.IncrCounterWithLabels(
+		[]string{types.ModuleName, metrics.ProcessOperations, metrics.StatefulOrderRemoved, metrics.Count},
+		1,
+		append(
+			orderIdToRemove.GetOrderIdLabels(),
+			metrics.GetLabelForStringValue(metrics.RemovalReason, orderRemoval.GetRemovalReason().String()),
+		),
+	)
+	return nil
 }
 
 // PersistMatchOrdersToState writes a MatchOrders object to state and emits an onchain
 // indexer event for the match.
-// Function will panic if any orderId referenced in matchOrders cannot be found.
 func (k Keeper) PersistMatchOrdersToState(
 	ctx sdk.Context,
 	matchOrders *types.MatchOrders,
 	ordersMap map[types.OrderId]types.Order,
-) (*types.OffchainUpdates, error) {
-	makerFills := matchOrders.GetFills()
-	takerOrder := k.MustFetchOrderFromOrderId(ctx, matchOrders.GetTakerOrderId(), ordersMap)
-	offchainUpdates := types.NewOffchainUpdates()
+) error {
+	takerOrderId := matchOrders.GetTakerOrderId()
+	// Fetch the taker order from either short term orders or state
+	takerOrder, err := k.FetchOrderFromOrderId(ctx, takerOrderId, ordersMap)
+	if err != nil {
+		return err
+	}
 
+	// Taker order cannot be post only.
+	if takerOrder.GetTimeInForce() == types.Order_TIME_IN_FORCE_POST_ONLY {
+		return errorsmod.Wrapf(
+			types.ErrInvalidMatchOrder,
+			"Taker order %+v cannot be post only.",
+			takerOrder.GetOrderTextString(),
+		)
+	}
+
+	if takerOrder.RequiresImmediateExecution() {
+		_, fillAmount, _ := k.GetOrderFillAmount(ctx, takerOrder.OrderId)
+		if fillAmount != 0 {
+			return errorsmod.Wrapf(
+				types.ErrImmediateExecutionOrderAlreadyFilled,
+				"Order %s",
+				takerOrder.GetOrderTextString(),
+			)
+		}
+	}
+
+	makerFills := matchOrders.GetFills()
 	for _, makerFill := range makerFills {
-		makerOrder := k.MustFetchOrderFromOrderId(ctx, makerFill.GetMakerOrderId(), ordersMap)
+		// Fetch the maker order from either short term orders or state.
+		makerOrder, err := k.FetchOrderFromOrderId(ctx, makerFill.MakerOrderId, ordersMap)
+		if err != nil {
+			return err
+		}
 
 		matchWithOrders := types.MatchWithOrders{
 			TakerOrder: &takerOrder,
@@ -241,53 +479,83 @@ func (k Keeper) PersistMatchOrdersToState(
 			FillAmount: satypes.BaseQuantums(makerFill.GetFillAmount()),
 		}
 
-		_, _, _, matchOffchainUpdates, err := k.ProcessSingleMatch(ctx, &matchWithOrders)
+		_, _, _, _, err = k.ProcessSingleMatch(ctx, &matchWithOrders)
 		if err != nil {
-			return nil, err
+			return err
 		}
-
-		// Batch off-chain updates generated from matching the orders. Offchain updates will be
-		// sent in `ProcessProposerOperations` if all state writes succeed.
-		offchainUpdates.Append(matchOffchainUpdates)
 
 		// Send on-chain update for the match. The events are stored in a TransientStore which should be rolled-back
 		// if the branched state is discarded, so batching is not necessary.
+
+		makerExists, totalFilledMaker, _ := k.GetOrderFillAmount(ctx, matchWithOrders.MakerOrder.MustGetOrder().OrderId)
+		takerExists, totalFilledTaker, _ := k.GetOrderFillAmount(ctx, matchWithOrders.TakerOrder.MustGetOrder().OrderId)
+		if !makerExists {
+			panic(
+				fmt.Sprintf("PersistMatchOrdersToState: Order fill amount not found for maker order: %+v",
+					matchWithOrders.MakerOrder.MustGetOrder().OrderId,
+				),
+			)
+		}
+		if !takerExists {
+			panic(
+				fmt.Sprintf("PersistMatchOrdersToState: Order fill amount not found for taker order: %+v",
+					matchWithOrders.TakerOrder.MustGetOrder().OrderId,
+				),
+			)
+		}
 		k.GetIndexerEventManager().AddTxnEvent(
 			ctx,
 			indexerevents.SubtypeOrderFill,
-			indexer_manager.GetB64EncodedEventMessage(
+			indexerevents.OrderFillEventVersion,
+			indexer_manager.GetBytes(
 				indexerevents.NewOrderFillEvent(
 					matchWithOrders.MakerOrder.MustGetOrder(),
 					matchWithOrders.TakerOrder.MustGetOrder(),
 					matchWithOrders.FillAmount,
 					matchWithOrders.MakerFee,
 					matchWithOrders.TakerFee,
+					totalFilledMaker,
+					totalFilledTaker,
 				),
 			),
 		)
 	}
 
-	return offchainUpdates, nil
+	return nil
 }
 
 // PersistMatchLiquidationToState writes a MatchPerpetualLiquidation event and updates the keeper transient store.
-// Function will panic if any orderId referenced in matchOrders cannot be matchLiquidation.
+// It also performs stateful validation on the matchLiquidations object.
 func (k Keeper) PersistMatchLiquidationToState(
 	ctx sdk.Context,
 	matchLiquidation *types.MatchPerpetualLiquidation,
 	ordersMap map[types.OrderId]types.Order,
-) (*types.OffchainUpdates, error) {
-	fills := matchLiquidation.GetFills()
-	offchainUpdates := types.NewOffchainUpdates()
-
-	takerOrder, err := k.ConstructTakerOrderFromMatchPerpetualLiquidation(ctx, matchLiquidation)
-	if err != nil {
-		return nil, err
+) error {
+	// If the subaccount is not liquidatable, do nothing.
+	if err := k.EnsureIsLiquidatable(ctx, matchLiquidation.Liquidated); err != nil {
+		return err
 	}
 
-	for _, fill := range fills {
-		makerOrderId := fill.GetMakerOrderId()
-		makerOrder := k.MustFetchOrderFromOrderId(ctx, makerOrderId, ordersMap)
+	takerOrder, err := k.GetLiquidationOrderForPerpetual(
+		ctx,
+		matchLiquidation.Liquidated,
+		matchLiquidation.PerpetualId,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Perform stateless validation on the liquidation order.
+	if err := k.ValidateLiquidationOrderAgainstProposedLiquidation(ctx, takerOrder, matchLiquidation); err != nil {
+		return err
+	}
+
+	for _, fill := range matchLiquidation.GetFills() {
+		// Fetch the maker order from either short term orders or state.
+		makerOrder, err := k.FetchOrderFromOrderId(ctx, fill.MakerOrderId, ordersMap)
+		if err != nil {
+			return err
+		}
 
 		matchWithOrders := types.MatchWithOrders{
 			MakerOrder: &makerOrder,
@@ -296,30 +564,38 @@ func (k Keeper) PersistMatchLiquidationToState(
 		}
 
 		// Write the position updates and state fill amounts for this match.
-		_, _, _, matchOffchainUpdates, err := k.ProcessSingleMatch(
+		// Note stateless validation on the constructed `matchWithOrders` is performed within this function.
+		_, _, _, _, err = k.ProcessSingleMatch(
 			ctx,
 			&matchWithOrders,
 		)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		// Batch off-chain updates generated from matching the liquidation. Offchain updates will be
-		// sent in `ProcessProposerOperations` if all state writes succeed.
-		offchainUpdates.Append(matchOffchainUpdates)
+		makerExists, totalFilledMaker, _ := k.GetOrderFillAmount(ctx, matchWithOrders.MakerOrder.MustGetOrder().OrderId)
+		if !makerExists {
+			panic(
+				fmt.Sprintf("PersistMatchLiquidationToState: Order fill amount not found for maker order: %+v",
+					matchWithOrders.MakerOrder.MustGetOrder().OrderId,
+				),
+			)
+		}
 
 		// Send on-chain update for the liquidation. The events are stored in a TransientStore which should be rolled-back
 		// if the branched state is discarded, so batching is not necessary.
 		k.GetIndexerEventManager().AddTxnEvent(
 			ctx,
 			indexerevents.SubtypeOrderFill,
-			indexer_manager.GetB64EncodedEventMessage(
+			indexerevents.OrderFillEventVersion,
+			indexer_manager.GetBytes(
 				indexerevents.NewLiquidationOrderFillEvent(
 					matchWithOrders.MakerOrder.MustGetOrder(),
 					matchWithOrders.TakerOrder,
 					matchWithOrders.FillAmount,
 					matchWithOrders.MakerFee,
 					matchWithOrders.TakerFee,
+					totalFilledMaker,
 				),
 			),
 		)
@@ -331,74 +607,76 @@ func (k Keeper) PersistMatchLiquidationToState(
 		matchLiquidation.Liquidated,
 		matchLiquidation.PerpetualId,
 	)
-	return offchainUpdates, nil
+	return nil
 }
 
 // PersistMatchDeleveragingToState writes a MatchPerpetualDeleveraging object to state.
 // This function returns an error if:
+// - CanDeleverageSubaccount returns false, indicating the subaccount failed deleveraging validation.
 // - OffsetSubaccountPerpetualPosition returns an error.
 // - The generated fills do not match the fills in the Operations object.
-// TODO(CLOB-654) Verify deleveraging is triggered by liquidation orders and for the correct amount.
+// TODO(CLOB-654) Verify deleveraging is triggered by unmatched liquidation orders and for the correct amount.
 func (k Keeper) PersistMatchDeleveragingToState(
 	ctx sdk.Context,
 	matchDeleveraging *types.MatchPerpetualDeleveraging,
 ) error {
-	fills := matchDeleveraging.GetFills()
 	liquidatedSubaccountId := matchDeleveraging.GetLiquidated()
 
-	isLiquidatable, err := k.IsLiquidatable(ctx, liquidatedSubaccountId)
-	if err != nil {
+	// Validate that the provided subaccount can be deleveraged.
+	if canDeleverageSubaccount, err := k.CanDeleverageSubaccount(ctx, liquidatedSubaccountId); err != nil {
 		panic(
 			fmt.Sprintf(
-				"PersistMatchDeleveragingToState: Failed to determine if subaccount is liquidatable. "+
-					"SubaccountId %v, error %s",
+				"PersistMatchDeleveragingToState: Failed to determine if subaccount can be deleveraged. "+
+					"SubaccountId %+v, error %+v",
 				liquidatedSubaccountId,
 				err,
 			),
 		)
-	}
-
-	if !isLiquidatable {
-		return sdkerrors.Wrapf(
-			types.ErrDeleveragedSubaccountNotLiquidatable,
-			"Subaccount %+v is not liquidatable",
+	} else if !canDeleverageSubaccount {
+		// TODO(CLOB-853): Add more verbose error logging about why deleveraging failed validation.
+		return errorsmod.Wrapf(
+			types.ErrInvalidDeleveragedSubaccount,
+			"Subaccount %+v failed deleveraging validation",
 			liquidatedSubaccountId,
 		)
 	}
 
 	perpetualId := matchDeleveraging.GetPerpetualId()
 
-	// Fetch total quantums to deleverage.
-	deltaQuantumsTotal := matchDeleveraging.GetTotalFilledQuantums()
-
-	generatedFills, _ := k.OffsetSubaccountPerpetualPosition(
-		ctx,
-		liquidatedSubaccountId,
-		perpetualId,
-		deltaQuantumsTotal,
-	)
-
-	// Fills should be equal since subaccounts are chosen deterministically.
-	if len(generatedFills) != len(fills) {
-		return sdkerrors.Wrapf(
-			types.ErrInvalidDeleveragingFills,
-			"Mismatched fill lengths. generated fills: %+v, match deleveraging fills: %+v",
-			fills,
-			generatedFills,
+	liquidatedSubaccount := k.subaccountsKeeper.GetSubaccount(ctx, liquidatedSubaccountId)
+	position, exists := liquidatedSubaccount.GetPerpetualPositionForId(perpetualId)
+	if !exists {
+		return errorsmod.Wrapf(
+			types.ErrNoOpenPositionForPerpetual,
+			"Subaccount %+v does not have an open position for perpetual %+v",
+			liquidatedSubaccountId,
+			perpetualId,
 		)
 	}
-	for idx, originalFill := range fills {
-		generatedFill := generatedFills[idx]
-		if generatedFill != originalFill {
-			return sdkerrors.Wrapf(
-				types.ErrInvalidDeleveragingFills,
-				"Mismatched fills. generated fills: %+v, match deleveraging fills: %+v, index %d, "+
-					"generated fill: %+v, match deleveraging fill: %+v",
-				fills,
-				generatedFills,
-				idx,
-				originalFill,
-				generatedFill,
+	deltaQuantumsIsNegative := position.GetIsLong()
+
+	for _, fill := range matchDeleveraging.GetFills() {
+		deltaQuantums := new(big.Int).SetUint64(fill.FillAmount)
+		if deltaQuantumsIsNegative {
+			deltaQuantums.Neg(deltaQuantums)
+		}
+
+		if err := k.ProcessDeleveraging(
+			ctx,
+			liquidatedSubaccountId,
+			fill.OffsettingSubaccountId,
+			perpetualId,
+			deltaQuantums,
+		); err != nil {
+			return errorsmod.Wrapf(
+				types.ErrInvalidDeleveragingFill,
+				"Failed to process deleveraging fill: %+v. liquidatedSubaccountId: %+v, "+
+					"perpetualId: %v, deltaQuantums: %v, error: %v",
+				fill,
+				liquidatedSubaccountId,
+				perpetualId,
+				deltaQuantums,
+				err,
 			)
 		}
 	}
@@ -406,40 +684,9 @@ func (k Keeper) PersistMatchDeleveragingToState(
 	return nil
 }
 
-// MustFetchOrderFromOrderId fetches an Order object given an orderId. If it is a short term order,
-// `ordersMap` will be used to populate the order. If it is a stateful order, read from state.
-// Function will panic if for any reason, the order cannot be searched up.
-func (k Keeper) MustFetchOrderFromOrderId(
-	ctx sdk.Context,
-	orderId types.OrderId,
-	ordersMap map[types.OrderId]types.Order,
-) types.Order {
-	// In the case of short term orders, fetch from the orders map.
-	// It should always exist in the orders map because short term order placement operations
-	// should precede operations with order ids that reference them.
-	if orderId.IsShortTermOrder() {
-		order, exists := ordersMap[orderId]
-		if !exists {
-			panic(
-				fmt.Sprintf("MustFetchOrderFromOrderId: failed fetching short term order for order id: %+v", orderId),
-			)
-		}
-		return order
-	}
-
-	// For stateful orders, fetch from state.
-	statefulOrderPlacement, found := k.GetLongTermOrderPlacement(ctx, orderId)
-	if !found {
-		panic(
-			fmt.Sprintf("MustFetchOrderFromOrderId: failed fetching stateful term order for order id: %+v", orderId),
-		)
-	}
-	return statefulOrderPlacement.Order
-}
-
 // GenerateProcessProposerMatchesEvents generates a `ProcessProposerMatchesEvents` object from
 // an operations queue.
-// Currently, it sets the `OrdersIdsFilledInLastBlock` field and the `BlockHeight` field.
+// Currently, it sets the `OrderIdsFilledInLastBlock` field and the `BlockHeight` field.
 // This function expects the proposed operations to be valid, and does not verify that the `GoodTilBlockTime`
 // of order replacement and cancellation is greater than the `GoodTilBlockTime` of the existing order.
 func (k Keeper) GenerateProcessProposerMatchesEvents(
@@ -476,21 +723,24 @@ func (k Keeper) GenerateProcessProposerMatchesEvents(
 			seenOrderIdsRemovedInLastBlock[orderId] = struct{}{}
 		}
 	}
-	filledOrderIds := lib.ConvertMapToSliceOfKeys(seenOrderIdsFilledInLastBlock)
-	removedOrderIds := lib.ConvertMapToSliceOfKeys(seenOrderIdsRemovedInLastBlock)
-	// Sort for deterministic ordering when writing to memstore.
-	types.MustSortAndHaveNoDuplicates(filledOrderIds)
-	types.MustSortAndHaveNoDuplicates(removedOrderIds)
 
-	// PlacedStatefulOrders to be populated in MsgHandler for MsgPlaceOrder.
+	// Sort for deterministic ordering when writing to memstore.
+	filledOrderIds := lib.GetSortedKeys[types.SortedOrders](seenOrderIdsFilledInLastBlock)
+	removedOrderIds := lib.GetSortedKeys[types.SortedOrders](seenOrderIdsRemovedInLastBlock)
+
+	// PlacedLongTermOrderIds to be populated in MsgHandler for MsgPlaceOrder.
+	// PlacedConditionalOrderIds to be populated in MsgHandler for MsgPlaceOrder.
+	// ConditionalOrderIdsTriggeredInLastBlock to be populated in EndBlocker.
 	// ExpiredOrderId to be populated in the EndBlocker.
-	// PlacedStatefulCancellations to be populated in MsgHandler for MsgCancelOrder.
+	// PlacedStatefulCancellation to be populated in MsgHandler for MsgCancelOrder.
 	return types.ProcessProposerMatchesEvents{
-		PlacedStatefulOrders:        []types.Order{},
-		ExpiredStatefulOrderIds:     []types.OrderId{},
-		OrdersIdsFilledInLastBlock:  filledOrderIds,
-		PlacedStatefulCancellations: []types.OrderId{},
-		RemovedStatefulOrderIds:     removedOrderIds,
-		BlockHeight:                 lib.MustConvertIntegerToUint32(ctx.BlockHeight()),
+		PlacedLongTermOrderIds:                  []types.OrderId{},
+		ExpiredStatefulOrderIds:                 []types.OrderId{},
+		OrderIdsFilledInLastBlock:               filledOrderIds,
+		PlacedStatefulCancellationOrderIds:      []types.OrderId{},
+		RemovedStatefulOrderIds:                 removedOrderIds,
+		PlacedConditionalOrderIds:               []types.OrderId{},
+		ConditionalOrderIdsTriggeredInLastBlock: []types.OrderId{},
+		BlockHeight:                             lib.MustConvertIntegerToUint32(ctx.BlockHeight()),
 	}
 }

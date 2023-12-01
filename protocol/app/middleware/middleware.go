@@ -8,11 +8,11 @@ import (
 
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/dydxprotocol/v4/app/basic_manager"
+	"github.com/dydxprotocol/v4-chain/protocol/app/basic_manager"
 )
 
 var (
-	Logger log.Logger = log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+	Logger = log.NewTMLogger(log.NewSyncWriter(os.Stdout))
 )
 
 func NewRunTxPanicLoggingMiddleware() baseapp.RecoveryHandler {

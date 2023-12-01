@@ -9,8 +9,8 @@ import (
 
 	gometrics "github.com/armon/go-metrics"
 	proto "github.com/cosmos/gogoproto/proto"
-	"github.com/dydxprotocol/v4/lib/metrics"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 var _ MatchableOrder = &Order{}
@@ -180,13 +180,13 @@ func (o *Order) CanTrigger(subticks Subticks) bool {
 	o.MustBeConditionalOrder()
 	orderTriggerSubticks := Subticks(o.ConditionalOrderTriggerSubticks)
 
-	// Take profit buys and stop loss sells trigger when when oracle price goes lower
+	// Take profit buys and stop loss sells trigger when the oracle price goes lower
 	// than or equal to the trigger price.
 	if o.ConditionType == Order_CONDITION_TYPE_TAKE_PROFIT && o.IsBuy() ||
 		o.ConditionType == Order_CONDITION_TYPE_STOP_LOSS && !o.IsBuy() {
 		return orderTriggerSubticks >= subticks
 	}
-	// Take profit sells and stop loss buys trigger when when oracle price goes higher
+	// Take profit sells and stop loss buys trigger when the oracle price goes higher
 	// than or equal to the trigger price.
 	return orderTriggerSubticks <= subticks
 }
@@ -221,12 +221,12 @@ func (o *Order) GetClobPairId() ClobPairId {
 
 // GetOrderLabels returns the telemetry labels of this order.
 func (o *Order) GetOrderLabels() []gometrics.Label {
-	return []gometrics.Label{
-		metrics.GetLabelForStringValue(metrics.TimeInForce, o.GetTimeInForce().String()),
-		metrics.GetLabelForBoolValue(metrics.ReduceOnly, o.IsReduceOnly()),
-		metrics.GetLabelForBoolValue(metrics.ShortTermOrder, o.IsShortTermOrder()),
-		metrics.GetLabelForBoolValue(metrics.StatefulOrder, o.IsStatefulOrder()),
-		metrics.GetLabelForStringValue(metrics.OrderSide, o.GetSide().String()),
-		metrics.GetLabelForIntValue(metrics.ClobPairId, int(o.GetClobPairId())),
-	}
+	return append(
+		[]gometrics.Label{
+			metrics.GetLabelForStringValue(metrics.TimeInForce, o.GetTimeInForce().String()),
+			metrics.GetLabelForBoolValue(metrics.ReduceOnly, o.IsReduceOnly()),
+			metrics.GetLabelForStringValue(metrics.OrderSide, o.GetSide().String()),
+		},
+		o.OrderId.GetOrderIdLabels()...,
+	)
 }

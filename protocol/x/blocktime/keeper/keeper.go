@@ -6,43 +6,50 @@ import (
 
 	"github.com/cometbft/cometbft/libs/log"
 
+	sdklog "cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/blocktime/types"
-)
-
-const (
-	allDowntimeInfoKey   = "AllDowntimeInfo/value"
-	previousBlockInfoKey = "PreviousBlockInfo/value/"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types"
 )
 
 type (
 	Keeper struct {
-		cdc      codec.BinaryCodec
-		storeKey storetypes.StoreKey
+		cdc         codec.BinaryCodec
+		storeKey    storetypes.StoreKey
+		authorities map[string]struct{}
 	}
 )
 
 func NewKeeper(
 	cdc codec.BinaryCodec,
 	storeKey storetypes.StoreKey,
+	authorities []string,
 ) *Keeper {
 	return &Keeper{
-		cdc:      cdc,
-		storeKey: storeKey,
+		cdc:         cdc,
+		storeKey:    storeKey,
+		authorities: lib.UniqueSliceToSet(authorities),
 	}
 }
 
+func (k Keeper) HasAuthority(authority string) bool {
+	_, ok := k.authorities[authority]
+	return ok
+}
+
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
-	return ctx.Logger().With("module", fmt.Sprintf("x/%s", types.ModuleName))
+	return ctx.Logger().With(sdklog.ModuleKey, fmt.Sprintf("x/%s", types.ModuleName))
 }
 
 func (k Keeper) InitializeForGenesis(ctx sdk.Context) {}
 
 func (k Keeper) GetAllDowntimeInfo(ctx sdk.Context) *types.AllDowntimeInfo {
 	store := ctx.KVStore(k.storeKey)
-	bytes := store.Get([]byte(allDowntimeInfoKey))
+	bytes := store.Get([]byte(types.AllDowntimeInfoKey))
 
 	if bytes == nil {
 		return &types.AllDowntimeInfo{}
@@ -58,26 +65,26 @@ func (k Keeper) GetAllDowntimeInfo(ctx sdk.Context) *types.AllDowntimeInfo {
 func (k Keeper) SetAllDowntimeInfo(ctx sdk.Context, info *types.AllDowntimeInfo) {
 	store := ctx.KVStore(k.storeKey)
 	b := k.cdc.MustMarshal(info)
-	store.Set([]byte(allDowntimeInfoKey), b)
+	store.Set([]byte(types.AllDowntimeInfoKey), b)
 }
 
-func (k Keeper) GetPreviousBlockInfo(ctx sdk.Context) *types.BlockInfo {
+func (k Keeper) GetPreviousBlockInfo(ctx sdk.Context) types.BlockInfo {
 	store := ctx.KVStore(k.storeKey)
-	bytes := store.Get([]byte(previousBlockInfoKey))
+	bytes := store.Get([]byte(types.PreviousBlockInfoKey))
 
 	if bytes == nil {
-		return &types.BlockInfo{}
+		return types.BlockInfo{}
 	}
 
 	var info types.BlockInfo
 	k.cdc.MustUnmarshal(bytes, &info)
-	return &info
+	return info
 }
 
 func (k Keeper) SetPreviousBlockInfo(ctx sdk.Context, info *types.BlockInfo) {
 	store := ctx.KVStore(k.storeKey)
 	b := k.cdc.MustMarshal(info)
-	store.Set([]byte(previousBlockInfoKey), b)
+	store.Set([]byte(types.PreviousBlockInfoKey), b)
 }
 
 // UpdateAllDowntimeInfo updates AllDowntimeInfo by considering the downtime between the current block and
@@ -85,11 +92,18 @@ func (k Keeper) SetPreviousBlockInfo(ctx sdk.Context, info *types.BlockInfo) {
 func (k Keeper) UpdateAllDowntimeInfo(ctx sdk.Context) {
 	previousBlockInfo := k.GetPreviousBlockInfo(ctx)
 	delta := ctx.BlockTime().Sub(previousBlockInfo.Timestamp)
+	// Report block time in milliseconds.
+	telemetry.SetGauge(
+		float32(delta.Milliseconds()),
+		types.ModuleName,
+		metrics.BlockTimeMs,
+	)
+
 	allInfo := k.GetAllDowntimeInfo(ctx)
 
 	for _, info := range allInfo.Infos {
 		if delta >= info.Duration {
-			info.BlockInfo = &types.BlockInfo{
+			info.BlockInfo = types.BlockInfo{
 				Height:    uint32(ctx.BlockHeight()),
 				Timestamp: ctx.BlockTime(),
 			}
@@ -108,7 +122,7 @@ func (k Keeper) GetDowntimeInfoFor(ctx sdk.Context, duration time.Duration) type
 	allInfo := k.GetAllDowntimeInfo(ctx)
 	ret := types.AllDowntimeInfo_DowntimeInfo{
 		Duration: 0,
-		BlockInfo: &types.BlockInfo{
+		BlockInfo: types.BlockInfo{
 			Height:    uint32(ctx.BlockHeight()),
 			Timestamp: ctx.BlockTime(),
 		},

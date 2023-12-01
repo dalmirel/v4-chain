@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dydxprotocol/v4/dtypes"
-	"github.com/dydxprotocol/v4/indexer/protocol/v1"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	v1 "github.com/dydxprotocol/v4-chain/protocol/indexer/protocol/v1"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -270,6 +270,36 @@ func TestOrderTimeInForceToIndexerOrderTimeInForce(t *testing.T) {
 	}
 }
 
+func TestOrderConditionTypeToIndexerOrderConditionType(t *testing.T) {
+	tests := map[string]struct {
+		// Input
+		conditionType clobtypes.Order_ConditionType
+
+		// Expectations
+		expectedConditionType v1.IndexerOrder_ConditionType
+	}{}
+	// Iterate through all the values for Order_ConditionType to create test cases.
+	for name, value := range clobtypes.Order_ConditionType_value {
+		testName := fmt.Sprintf("Converts Order_ConditionType %s to IndexerOrderV1_ConditionType", name)
+		tests[testName] = struct {
+			conditionType         clobtypes.Order_ConditionType
+			expectedConditionType v1.IndexerOrder_ConditionType
+		}{
+			conditionType:         clobtypes.Order_ConditionType(value),
+			expectedConditionType: v1.IndexerOrder_ConditionType(v1.IndexerOrder_ConditionType_value[name]),
+		}
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(
+				t,
+				tc.expectedConditionType,
+				v1.OrderConditionTypeToIndexerOrderConditionType(tc.conditionType),
+			)
+		})
+	}
+}
+
 func TestOrderToIndexerOrderV1(t *testing.T) {
 	shortTermOrder := constants.Order_Alice_Num1_Id2_Clob1_Buy67_Price5_GTB20
 	statefulOrder := constants.LongTermOrder_Bob_Num0_Id1_Clob0_Sell50_Price10_GTBT15
@@ -299,9 +329,11 @@ func TestOrderToIndexerOrderV1(t *testing.T) {
 				GoodTilOneof: &v1.IndexerOrder_GoodTilBlock{
 					GoodTilBlock: shortTermOrder.GoodTilOneof.(*clobtypes.Order_GoodTilBlock).GoodTilBlock,
 				},
-				TimeInForce:    v1.OrderTimeInForceToIndexerOrderTimeInForce(shortTermOrder.TimeInForce),
-				ReduceOnly:     shortTermOrder.ReduceOnly,
-				ClientMetadata: shortTermOrder.ClientMetadata,
+				TimeInForce:                     v1.OrderTimeInForceToIndexerOrderTimeInForce(shortTermOrder.TimeInForce),
+				ReduceOnly:                      shortTermOrder.ReduceOnly,
+				ClientMetadata:                  shortTermOrder.ClientMetadata,
+				ConditionType:                   v1.OrderConditionTypeToIndexerOrderConditionType(shortTermOrder.ConditionType),
+				ConditionalOrderTriggerSubticks: shortTermOrder.ConditionalOrderTriggerSubticks,
 			},
 		},
 		"Maps stateful order to IndexerOrderV1": {
@@ -322,9 +354,11 @@ func TestOrderToIndexerOrderV1(t *testing.T) {
 				GoodTilOneof: &v1.IndexerOrder_GoodTilBlockTime{
 					GoodTilBlockTime: statefulOrder.GoodTilOneof.(*clobtypes.Order_GoodTilBlockTime).GoodTilBlockTime,
 				},
-				TimeInForce:    v1.OrderTimeInForceToIndexerOrderTimeInForce(statefulOrder.TimeInForce),
-				ReduceOnly:     statefulOrder.ReduceOnly,
-				ClientMetadata: statefulOrder.ClientMetadata,
+				TimeInForce:                     v1.OrderTimeInForceToIndexerOrderTimeInForce(statefulOrder.TimeInForce),
+				ReduceOnly:                      statefulOrder.ReduceOnly,
+				ClientMetadata:                  statefulOrder.ClientMetadata,
+				ConditionType:                   v1.OrderConditionTypeToIndexerOrderConditionType(statefulOrder.ConditionType),
+				ConditionalOrderTriggerSubticks: statefulOrder.ConditionalOrderTriggerSubticks,
 			},
 		},
 	}
@@ -346,4 +380,46 @@ func TestOrderToIndexerOrder_Panic(t *testing.T) {
 	require.Panics(t, func() {
 		v1.OrderToIndexerOrder(invalidOrder)
 	})
+}
+
+func TestConvertToClobPairStatus(t *testing.T) {
+	type convertToClobPairStatusTestCase struct {
+		status         clobtypes.ClobPair_Status
+		expectedStatus v1.ClobPairStatus
+		expectedPanic  string
+	}
+
+	tests := make(map[string]convertToClobPairStatusTestCase)
+	// Iterate through all the values for ClobPair_Status to create test cases.
+	for name, value := range clobtypes.ClobPair_Status_value {
+		testName := fmt.Sprintf("Converts ClobPair_Status %s to v1.ClobPairStatus", name)
+		testCase := convertToClobPairStatusTestCase{
+			status:         clobtypes.ClobPair_Status(value),
+			expectedStatus: v1.ClobPairStatus(clobtypes.ClobPair_Status_value[name]),
+		}
+		if value == int32(clobtypes.ClobPair_STATUS_UNSPECIFIED) {
+			testCase.expectedPanic = "invalid clob pair status"
+		}
+		tests[testName] = testCase
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if tc.expectedPanic != "" {
+				require.PanicsWithValue(
+					t,
+					tc.expectedPanic,
+					func() {
+						v1.ConvertToClobPairStatus(tc.status)
+					},
+				)
+			} else {
+				require.Equal(
+					t,
+					tc.expectedStatus,
+					v1.ConvertToClobPairStatus(tc.status),
+				)
+			}
+		})
+	}
 }

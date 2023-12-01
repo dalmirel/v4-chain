@@ -7,21 +7,21 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/app/prepare"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/encoding"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	perpetualtypes "github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/app/prepare"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/encoding"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	bridgetypes "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	perpetualtypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	ctx     = sdktypes.Context{}
-	address = []byte{1, 2, 3, 4}
+	ctx = sdktypes.Context{}
 
 	failingTxEncoder = func(tx sdktypes.Tx) ([]byte, error) {
 		return nil, errors.New("encoder failed")
@@ -40,10 +40,6 @@ var (
 	}
 )
 
-func TestEmptyResponse(t *testing.T) {
-	require.Equal(t, abci.ResponsePrepareProposal{Txs: [][]byte{}}, prepare.EmptyResponse)
-}
-
 func TestPrepareProposalHandler(t *testing.T) {
 	msgSendTxBytesLen := int64(len(constants.Msg_Send_TxBytes))
 	msgSendAndTransferTxBytesLen := int64(len(constants.Msg_SendAndTransfer_TxBytes))
@@ -60,6 +56,9 @@ func TestPrepareProposalHandler(t *testing.T) {
 
 		clobResp    *clobtypes.MsgProposedOperations
 		clobEncoder sdktypes.TxEncoder
+
+		bridgeResp    *bridgetypes.MsgAcknowledgeBridges
+		bridgeEncoder sdktypes.TxEncoder
 
 		expectedTxs [][]byte
 	}{
@@ -129,8 +128,8 @@ func TestPrepareProposalHandler(t *testing.T) {
 			expectedTxs: [][]byte{}, // error returns empty result.
 		},
 
-		// Operations related.
-		"Error: GetOperationsTx returns err": {
+		// Bridge related.
+		"Error: GetAcknowledgeBridgesTx returns err": {
 			maxBytes: 3,
 
 			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
@@ -138,6 +137,53 @@ func TestPrepareProposalHandler(t *testing.T) {
 
 			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
 			fundingEncoder: passingTxEncoderOne,
+
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: failingTxEncoder, // encoder fails and returns err.
+
+			expectedTxs: [][]byte{}, // error returns empty result.
+		},
+		"Error: GetAcknowledgeBridgesTx returns empty": {
+			maxBytes: 3,
+
+			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
+			pricesEncoder: passingTxEncoderOne,
+
+			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
+			fundingEncoder: passingTxEncoderOne,
+
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: emptyTxEncoder, // encoder returns empty.
+
+			expectedTxs: [][]byte{}, // error returns empty result.
+		},
+		"Error: SetAcknowledgeBridgesTx returns err": {
+			maxBytes: 2,
+
+			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
+			pricesEncoder: passingTxEncoderOne, // takes up 1 byte
+
+			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
+			fundingEncoder: passingTxEncoderOne, // takes up 1 byte
+
+			bridgeResp:    constants.MsgAcknowledgeBridges_Id0_Height0,
+			bridgeEncoder: passingTxEncoderOne, // takes up another 1 byte, so exceeds max.
+
+			expectedTxs: [][]byte{}, // error returns empty result.
+		},
+
+		// Operations related.
+		"Error: GetOperationsTx returns err": {
+			maxBytes: 4,
+
+			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
+			pricesEncoder: passingTxEncoderOne,
+
+			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
+			fundingEncoder: passingTxEncoderOne,
+
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: passingTxEncoderOne,
 
 			clobResp:    &clobtypes.MsgProposedOperations{},
 			clobEncoder: failingTxEncoder, // encoder fails and returns err.
@@ -145,7 +191,7 @@ func TestPrepareProposalHandler(t *testing.T) {
 			expectedTxs: [][]byte{}, // error returns empty result.
 		},
 		"Error: GetOperationsTx returns empty": {
-			maxBytes: 3,
+			maxBytes: 4,
 
 			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
 			pricesEncoder: passingTxEncoderOne,
@@ -153,19 +199,25 @@ func TestPrepareProposalHandler(t *testing.T) {
 			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
 			fundingEncoder: passingTxEncoderOne,
 
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: passingTxEncoderOne,
+
 			clobResp:    &clobtypes.MsgProposedOperations{},
 			clobEncoder: emptyTxEncoder, // encoder returns empty.
 
 			expectedTxs: [][]byte{}, // error returns empty result.
 		},
 		"Error: SetOperationsTx returns err": {
-			maxBytes: 2, // only upto 2 bytes, not enough space for the order tx.
+			maxBytes: 3, // only upto 3 bytes, not enough space for the order tx.
 
 			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
 			pricesEncoder: passingTxEncoderOne, // takes up 1 byte.
 
 			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
 			fundingEncoder: passingTxEncoderOne, // takes up another 1 byte.
+
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: passingTxEncoderOne, // takes up another 1 byte.
 
 			clobResp:    &clobtypes.MsgProposedOperations{},
 			clobEncoder: passingTxEncoderOne, // takes up another 1, so exceeds max.
@@ -175,7 +227,7 @@ func TestPrepareProposalHandler(t *testing.T) {
 
 		// "Others" related.
 		"Error: AddOtherTxs return error": {
-			maxBytes: 13,
+			maxBytes: 17,
 			txs:      [][]byte{{}},
 
 			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
@@ -184,13 +236,16 @@ func TestPrepareProposalHandler(t *testing.T) {
 			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
 			fundingEncoder: passingTxEncoderFour,
 
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: passingTxEncoderFour,
+
 			clobResp:    &clobtypes.MsgProposedOperations{},
 			clobEncoder: passingTxEncoderFour,
 
 			expectedTxs: [][]byte{}, // error returns empty result.
 		},
 		"Error: AddOtherTxs (additional) return error": {
-			maxBytes: 15,
+			maxBytes: 19,
 			txs:      [][]byte{{9, 8}, {9}, {}, {}},
 
 			pricesResp:    &pricestypes.MsgUpdateMarketPrices{},
@@ -199,13 +254,16 @@ func TestPrepareProposalHandler(t *testing.T) {
 			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
 			fundingEncoder: passingTxEncoderFour,
 
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: passingTxEncoderFour,
+
 			clobResp:    &clobtypes.MsgProposedOperations{},
 			clobEncoder: passingTxEncoderFour,
 
 			expectedTxs: [][]byte{}, // error returns empty result.
 		},
 		"Valid: Not all Others than can fit": {
-			maxBytes: int64(12) + msgSendTxBytesLen + 1,
+			maxBytes: int64(16) + msgSendTxBytesLen + 1,
 			txs: [][]byte{
 				constants.Msg_Send_TxBytes,
 				constants.Msg_Send_TxBytes, // not included due to maxBytes.
@@ -218,18 +276,22 @@ func TestPrepareProposalHandler(t *testing.T) {
 			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
 			fundingEncoder: passingTxEncoderFour,
 
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: passingTxEncoderFour,
+
 			clobResp:    &clobtypes.MsgProposedOperations{},
 			clobEncoder: passingTxEncoderFour,
 
 			expectedTxs: [][]byte{
 				{1, 2, 3, 4},               // order.
 				constants.Msg_Send_TxBytes, // others.
+				{1, 2, 3, 4},               // bridge.
 				{1, 2, 3, 4},               // funding.
 				{1, 2, 3, 4},               // prices.
 			},
 		},
 		"Valid: Additional Others fit": {
-			maxBytes: int64(12) + msgSendTxBytesLen + msgSendAndTransferTxBytesLen,
+			maxBytes: int64(16) + msgSendTxBytesLen + msgSendAndTransferTxBytesLen,
 			txs: [][]byte{
 				constants.Msg_Send_TxBytes,
 				constants.Msg_SendAndTransfer_TxBytes,
@@ -242,13 +304,17 @@ func TestPrepareProposalHandler(t *testing.T) {
 			fundingResp:    &perpetualtypes.MsgAddPremiumVotes{},
 			fundingEncoder: passingTxEncoderFour,
 
+			bridgeResp:    &bridgetypes.MsgAcknowledgeBridges{},
+			bridgeEncoder: passingTxEncoderFour,
+
 			clobResp:    &clobtypes.MsgProposedOperations{},
 			clobEncoder: passingTxEncoderFour,
 
 			expectedTxs: [][]byte{
 				{1, 2, 3, 4},                          // order.
 				constants.Msg_Send_TxBytes,            // others.
-				constants.Msg_SendAndTransfer_TxBytes, // addtional others.
+				constants.Msg_SendAndTransfer_TxBytes, // additional others.
+				{1, 2, 3, 4},                          // bridge.
 				{1, 2, 3, 4},                          // funding.
 				{1, 2, 3, 4},                          // prices.
 			},
@@ -259,7 +325,12 @@ func TestPrepareProposalHandler(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			mockTxConfig := createMockTxConfig(
 				nil,
-				[]sdktypes.TxEncoder{tc.pricesEncoder, tc.fundingEncoder, tc.clobEncoder},
+				[]sdktypes.TxEncoder{
+					tc.pricesEncoder,
+					tc.fundingEncoder,
+					tc.bridgeEncoder,
+					tc.clobEncoder,
+				},
 			)
 
 			mockPricesKeeper := mocks.PreparePricesKeeper{}
@@ -270,6 +341,10 @@ func TestPrepareProposalHandler(t *testing.T) {
 			mockPerpKeeper.On("GetAddPremiumVotes", mock.Anything).
 				Return(tc.fundingResp)
 
+			mockBridgeKeeper := mocks.PrepareBridgeKeeper{}
+			mockBridgeKeeper.On("GetAcknowledgeBridges", mock.Anything, mock.Anything).
+				Return(tc.bridgeResp)
+
 			mockClobKeeper := mocks.PrepareClobKeeper{}
 			mockClobKeeper.On("GetOperations", mock.Anything, mock.Anything).
 				Return(tc.clobResp)
@@ -278,6 +353,7 @@ func TestPrepareProposalHandler(t *testing.T) {
 
 			handler := prepare.PrepareProposalHandler(
 				mockTxConfig,
+				&mockBridgeKeeper,
 				&mockClobKeeper,
 				&mockPricesKeeper,
 				&mockPerpKeeper,
@@ -310,8 +386,9 @@ func TestPrepareProposalHandler_OtherTxs(t *testing.T) {
 			expectedTxs: [][]byte{
 				constants.ValidEmptyMsgProposedOperationsTxBytes, // order.
 				// no other txs.
-				constants.ValidMsgAddPremiumVotesTxBytes,    // funding.
-				constants.ValidMsgUpdateMarketPricesTxBytes, // prices.
+				constants.MsgAcknowledgeBridges_Ids0_1_Height0_TxBytes, // bridge.
+				constants.ValidMsgAddPremiumVotesTxBytes,               // funding.
+				constants.ValidMsgUpdateMarketPricesTxBytes,            // prices.
 			},
 		},
 		"Valid: some others txs contain disallow msgs": {
@@ -323,11 +400,12 @@ func TestPrepareProposalHandler_OtherTxs(t *testing.T) {
 				constants.ValidMsgAddPremiumVotesTxBytes, // filtered out.
 			},
 			expectedTxs: [][]byte{
-				constants.ValidEmptyMsgProposedOperationsTxBytes, // order.
-				constants.Msg_SendAndTransfer_TxBytes,            // others.
-				constants.Msg_Send_TxBytes,                       // others.
-				constants.ValidMsgAddPremiumVotesTxBytes,         // funding.
-				constants.ValidMsgUpdateMarketPricesTxBytes,      // prices.
+				constants.ValidEmptyMsgProposedOperationsTxBytes,       // order.
+				constants.Msg_SendAndTransfer_TxBytes,                  // others.
+				constants.Msg_Send_TxBytes,                             // others.
+				constants.MsgAcknowledgeBridges_Ids0_1_Height0_TxBytes, // bridge.
+				constants.ValidMsgAddPremiumVotesTxBytes,               // funding.
+				constants.ValidMsgUpdateMarketPricesTxBytes,            // prices.
 			},
 		},
 	}
@@ -346,10 +424,15 @@ func TestPrepareProposalHandler_OtherTxs(t *testing.T) {
 			mockClobKeeper.On("GetOperations", mock.Anything, mock.Anything).
 				Return(constants.ValidEmptyMsgProposedOperations)
 
+			mockBridgeKeeper := mocks.PrepareBridgeKeeper{}
+			mockBridgeKeeper.On("GetAcknowledgeBridges", mock.Anything, mock.Anything).
+				Return(constants.MsgAcknowledgeBridges_Ids0_1_Height0)
+
 			ctx, _, _, _, _, _ := keepertest.PricesKeepers(t)
 
 			handler := prepare.PrepareProposalHandler(
 				encodingCfg.TxConfig,
+				&mockBridgeKeeper,
 				&mockClobKeeper,
 				&mockPricesKeeper,
 				&mockPerpKeeper,
@@ -416,14 +499,76 @@ func TestGetUpdateMarketPricesTx(t *testing.T) {
 			mockPricesKeeper.On("GetValidMarketPriceUpdates", mock.Anything).
 				Return(tc.keeperResp)
 
-			resp := prepare.GetUpdateMarketPricesTx(ctx, mockTxConfig, address, &mockPricesKeeper)
+			resp, err := prepare.GetUpdateMarketPricesTx(ctx, mockTxConfig, &mockPricesKeeper)
 			if tc.expectedErr != nil {
-				require.ErrorContains(t, resp.Err, tc.expectedErr.Error())
+				require.Equal(t, err, tc.expectedErr)
 			} else {
-				require.NoError(t, resp.Err)
+				require.NoError(t, err)
 			}
 			require.Equal(t, tc.expectedTx, resp.Tx)
 			require.Equal(t, tc.expectedNumMarkets, resp.NumMarkets)
+		})
+	}
+}
+
+func TestGetAcknowledgeBridgesTx(t *testing.T) {
+	tests := map[string]struct {
+		keeperResp *bridgetypes.MsgAcknowledgeBridges
+		txEncoder  sdktypes.TxEncoder
+
+		expectedTx         []byte
+		expectedNumBridges int
+		expectedErr        error
+	}{
+		"empty list of msgs": {
+			keeperResp: &bridgetypes.MsgAcknowledgeBridges{},
+			txEncoder:  passingTxEncoderOne,
+
+			expectedTx:         []byte{1},
+			expectedNumBridges: 0,
+		},
+		"empty tx": {
+			keeperResp: &bridgetypes.MsgAcknowledgeBridges{},
+			txEncoder:  emptyTxEncoder, // returns empty tx.
+
+			expectedErr: fmt.Errorf("Invalid tx: []"),
+		},
+		"valid messages, but encoding fails": {
+			keeperResp: &bridgetypes.MsgAcknowledgeBridges{},
+			txEncoder:  failingTxEncoder,
+
+			expectedErr: fmt.Errorf("encoder failed"),
+		},
+		"1 bridge event": {
+			keeperResp: constants.MsgAcknowledgeBridges_Id0_Height0,
+			txEncoder:  passingTxEncoderTwo,
+
+			expectedTx:         []byte{1, 2},
+			expectedNumBridges: 1,
+		},
+		"2 bridge events": {
+			keeperResp: constants.MsgAcknowledgeBridges_Ids0_1_Height0,
+			txEncoder:  passingTxEncoderFour,
+
+			expectedTx:         []byte{1, 2, 3, 4},
+			expectedNumBridges: 2,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			mockTxConfig := createMockTxConfig(nil, []sdktypes.TxEncoder{tc.txEncoder})
+			mockBridgeKeeper := mocks.PrepareBridgeKeeper{}
+			mockBridgeKeeper.On("GetAcknowledgeBridges", mock.Anything, mock.Anything).
+				Return(tc.keeperResp)
+
+			resp, err := prepare.GetAcknowledgeBridgesTx(ctx, mockTxConfig, &mockBridgeKeeper)
+			if tc.expectedErr != nil {
+				require.Equal(t, err, tc.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.expectedTx, resp.Tx)
+			require.Equal(t, tc.expectedNumBridges, resp.NumBridges)
 		})
 	}
 }
@@ -478,11 +623,11 @@ func TestGetAddPremiumVotesTx(t *testing.T) {
 			mockPerpKeeper.On("GetAddPremiumVotes", mock.Anything).
 				Return(tc.keeperResp)
 
-			resp := prepare.GetAddPremiumVotesTx(ctx, mockTxConfig, &mockPerpKeeper)
+			resp, err := prepare.GetAddPremiumVotesTx(ctx, mockTxConfig, &mockPerpKeeper)
 			if tc.expectedErr != nil {
-				require.ErrorContains(t, resp.Err, tc.expectedErr.Error())
+				require.Equal(t, err, tc.expectedErr)
 			} else {
-				require.NoError(t, resp.Err)
+				require.NoError(t, err)
 			}
 			require.Equal(t, tc.expectedTx, resp.Tx)
 			require.Equal(t, tc.expectedNumVotes, resp.NumVotes)
@@ -542,11 +687,11 @@ func TestGetProposedOperationsTx(t *testing.T) {
 			mockClobKeeper := mocks.PrepareClobKeeper{}
 			mockClobKeeper.On("GetOperations", mock.Anything, mock.Anything).Return(tc.keeperResp)
 
-			resp := prepare.GetProposedOperationsTx(ctx, mockTxConfig, &mockClobKeeper)
+			resp, err := prepare.GetProposedOperationsTx(ctx, mockTxConfig, &mockClobKeeper)
 			if tc.expectedErr != nil {
-				require.ErrorContains(t, resp.Err, tc.expectedErr.Error())
+				require.Equal(t, err, tc.expectedErr)
 			} else {
-				require.NoError(t, resp.Err)
+				require.NoError(t, err)
 			}
 			require.Equal(t, tc.expectedTx, resp.Tx)
 		})
@@ -583,7 +728,7 @@ func TestEncodeMsgsIntoTxBytes(t *testing.T) {
 			tx, err := prepare.EncodeMsgsIntoTxBytes(mockTxConfig, &clobtypes.MsgProposedOperations{})
 
 			if tc.expectedErr != nil {
-				require.ErrorContains(t, err, tc.expectedErr.Error())
+				require.Equal(t, err, tc.expectedErr)
 			} else {
 				require.NoError(t, err)
 			}

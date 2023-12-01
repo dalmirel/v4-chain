@@ -1,18 +1,24 @@
 package clob_test
 
 import (
+	errorsmod "cosmossdk.io/errors"
 	"testing"
 
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/x/clob"
-	"github.com/dydxprotocol/v4/x/clob/memclob"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	"github.com/dydxprotocol/v4/x/perpetuals"
-	"github.com/dydxprotocol/v4/x/prices"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	clobtest "github.com/dydxprotocol/v4-chain/protocol/testutil/clob"
+
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/memclob"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,9 +34,15 @@ func TestGenesis(t *testing.T) {
 		"Genesis state is valid": {
 			genesis: types.GenesisState{
 				BlockRateLimitConfig: types.BlockRateLimitConfiguration{
-					MaxShortTermOrdersPerMarketPerNBlocks: []types.MaxPerNBlocksRateLimit{
+					MaxShortTermOrdersPerNBlocks: []types.MaxPerNBlocksRateLimit{
 						{
-							Limit:     50,
+							Limit:     200,
+							NumBlocks: 1,
+						},
+					},
+					MaxShortTermOrderCancellationsPerNBlocks: []types.MaxPerNBlocksRateLimit{
+						{
+							Limit:     200,
 							NumBlocks: 1,
 						},
 					},
@@ -45,6 +57,60 @@ func TestGenesis(t *testing.T) {
 						},
 					},
 				},
+				EquityTierLimitConfig: types.EquityTierLimitConfiguration{
+					ShortTermOrderEquityTiers: []types.EquityTierLimit{
+						{
+							UsdTncRequired: dtypes.NewInt(0),
+							Limit:          0,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(20),
+							Limit:          1,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(100),
+							Limit:          5,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(1000),
+							Limit:          10,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(10000),
+							Limit:          100,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(100000),
+							Limit:          1000,
+						},
+					},
+					StatefulOrderEquityTiers: []types.EquityTierLimit{
+						{
+							UsdTncRequired: dtypes.NewInt(0),
+							Limit:          0,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(20),
+							Limit:          1,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(100),
+							Limit:          5,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(1000),
+							Limit:          10,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(10000),
+							Limit:          100,
+						},
+						{
+							UsdTncRequired: dtypes.NewInt(100000),
+							Limit:          200,
+						},
+					},
+				},
 				ClobPairs: []types.ClobPair{
 					{
 						Metadata: &types.ClobPair_PerpetualClobMetadata{
@@ -52,23 +118,21 @@ func TestGenesis(t *testing.T) {
 								PerpetualId: 0,
 							},
 						},
-						Id:                   uint32(0),
-						StepBaseQuantums:     5,
-						SubticksPerTick:      5,
-						MinOrderBaseQuantums: 10,
-						Status:               types.ClobPair_STATUS_ACTIVE,
+						Id:               uint32(0),
+						StepBaseQuantums: 5,
+						SubticksPerTick:  5,
+						Status:           types.ClobPair_STATUS_ACTIVE,
 					},
 					{
 						Metadata: &types.ClobPair_PerpetualClobMetadata{
 							PerpetualClobMetadata: &types.PerpetualClobMetadata{
-								PerpetualId: 0,
+								PerpetualId: 1,
 							},
 						},
-						Id:                   uint32(1),
-						StepBaseQuantums:     5,
-						SubticksPerTick:      5,
-						MinOrderBaseQuantums: 10,
-						Status:               types.ClobPair_STATUS_ACTIVE,
+						Id:               uint32(1),
+						StepBaseQuantums: 5,
+						SubticksPerTick:  5,
+						Status:           types.ClobPair_STATUS_ACTIVE,
 					},
 				},
 				LiquidationsConfig: types.LiquidationsConfig{
@@ -112,12 +176,11 @@ func TestGenesis(t *testing.T) {
 			genesis: types.GenesisState{
 				ClobPairs: []types.ClobPair{
 					{
-						Id:                   uint32(0),
-						Metadata:             nil,
-						StepBaseQuantums:     5,
-						SubticksPerTick:      5,
-						MinOrderBaseQuantums: 10,
-						Status:               types.ClobPair_STATUS_ACTIVE,
+						Id:               uint32(0),
+						Metadata:         nil,
+						StepBaseQuantums: 5,
+						SubticksPerTick:  5,
+						Status:           types.ClobPair_STATUS_ACTIVE,
 					},
 					{
 						Metadata: &types.ClobPair_PerpetualClobMetadata{
@@ -125,11 +188,10 @@ func TestGenesis(t *testing.T) {
 								PerpetualId: 0,
 							},
 						},
-						Id:                   uint32(1),
-						StepBaseQuantums:     5,
-						SubticksPerTick:      5,
-						MinOrderBaseQuantums: 10,
-						Status:               types.ClobPair_STATUS_ACTIVE,
+						Id:               uint32(1),
+						StepBaseQuantums: 5,
+						SubticksPerTick:  5,
+						Status:           types.ClobPair_STATUS_ACTIVE,
 					},
 				},
 				LiquidationsConfig: types.LiquidationsConfig{
@@ -155,11 +217,10 @@ func TestGenesis(t *testing.T) {
 								QuoteAssetId: 1,
 							},
 						},
-						Id:                   uint32(0),
-						StepBaseQuantums:     5,
-						SubticksPerTick:      5,
-						MinOrderBaseQuantums: 10,
-						Status:               types.ClobPair_STATUS_ACTIVE,
+						Id:               uint32(0),
+						StepBaseQuantums: 5,
+						SubticksPerTick:  5,
+						Status:           types.ClobPair_STATUS_ACTIVE,
 					},
 					{
 						Metadata: &types.ClobPair_PerpetualClobMetadata{
@@ -167,11 +228,10 @@ func TestGenesis(t *testing.T) {
 								PerpetualId: 0,
 							},
 						},
-						Id:                   uint32(1),
-						StepBaseQuantums:     5,
-						SubticksPerTick:      5,
-						MinOrderBaseQuantums: 10,
-						Status:               types.ClobPair_STATUS_ACTIVE,
+						Id:               uint32(1),
+						StepBaseQuantums: 5,
+						SubticksPerTick:  5,
+						Status:           types.ClobPair_STATUS_ACTIVE,
 					},
 				},
 				LiquidationsConfig: types.LiquidationsConfig{
@@ -202,7 +262,7 @@ func TestGenesis(t *testing.T) {
 			expectedErr:     "0 is not a valid SpreadToMaintenanceMarginRatioPpm",
 			expectedErrType: types.ErrInvalidLiquidationsConfig,
 		},
-		"Genesis state is invalid when spread to maintenance margin ratio ppm is greater than one million": {
+		"Genesis state is valid when spread to maintenance margin ratio ppm is greater than one million": {
 			genesis: types.GenesisState{
 				LiquidationsConfig: types.LiquidationsConfig{
 					MaxLiquidationFeePpm: 5_000,
@@ -214,8 +274,6 @@ func TestGenesis(t *testing.T) {
 					SubaccountBlockLimits: constants.SubaccountBlockLimits_Default,
 				},
 			},
-			expectedErr:     "1000001 is not a valid SpreadToMaintenanceMarginRatioPpm",
-			expectedErrType: types.ErrInvalidLiquidationsConfig,
 		},
 		"Genesis state is invalid when bankruptcy adjustment ppm is less than one million": {
 			genesis: types.GenesisState{
@@ -319,7 +377,7 @@ func TestGenesis(t *testing.T) {
 		"Genesis state is invalid when BlockRateLimitConfiguration is invalid": {
 			genesis: types.GenesisState{
 				BlockRateLimitConfig: types.BlockRateLimitConfiguration{
-					MaxShortTermOrdersPerMarketPerNBlocks: []types.MaxPerNBlocksRateLimit{
+					MaxShortTermOrdersPerNBlocks: []types.MaxPerNBlocksRateLimit{
 						{
 							Limit:     1,
 							NumBlocks: 0,
@@ -336,27 +394,79 @@ func TestGenesis(t *testing.T) {
 					SubaccountBlockLimits: constants.SubaccountBlockLimits_Default,
 				},
 			},
-			expectedErr: "0 is not a valid NumBlocks for MaxShortTermOrdersPerMarketPerNBlocks rate limit " +
+			expectedErr: "0 is not a valid NumBlocks for MaxShortTermOrdersPerNBlocks rate limit " +
 				"{NumBlocks:0 Limit:1}",
 			expectedErrType: types.ErrInvalidBlockRateLimitConfig,
+		},
+		"Genesis state is invalid when EquityTierLimitConfiguration is invalid": {
+			genesis: types.GenesisState{
+				EquityTierLimitConfig: types.EquityTierLimitConfiguration{
+					ShortTermOrderEquityTiers: []types.EquityTierLimit{
+						{
+							Limit:          0,
+							UsdTncRequired: dtypes.NewInt(-1),
+						},
+					},
+				},
+				LiquidationsConfig: types.LiquidationsConfig{
+					MaxLiquidationFeePpm: 5_000,
+					FillablePriceConfig: types.FillablePriceConfig{
+						BankruptcyAdjustmentPpm:           lib.OneMillion,
+						SpreadToMaintenanceMarginRatioPpm: 100_000,
+					},
+					PositionBlockLimits:   constants.PositionBlockLimits_Default,
+					SubaccountBlockLimits: constants.SubaccountBlockLimits_Default,
+				},
+			},
+			expectedErr: "-1 is not a valid UsdTncRequired for ShortTermOrderEquityTiers equity tier limit " +
+				"{UsdTncRequired:-1 Limit:0}",
+			expectedErrType: types.ErrInvalidEquityTierLimitConfig,
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			memClob := memclob.NewMemClobPriceTimePriority(false)
-			ks := keepertest.NewClobKeepersTestContext(t, memClob, &mocks.BankKeeper{}, &mocks.IndexerEventManager{})
+			mockIndexerEventManager := &mocks.IndexerEventManager{}
+			ks := keepertest.NewClobKeepersTestContext(t, memClob, &mocks.BankKeeper{}, mockIndexerEventManager)
 			ctx := ks.Ctx.WithBlockTime(constants.TimeT)
 
 			prices.InitGenesis(ctx, *ks.PricesKeeper, constants.Prices_DefaultGenesisState)
 			perpetuals.InitGenesis(ctx, *ks.PerpetualsKeeper, constants.Perpetuals_DefaultGenesisState)
 
+			// PerpetualMarketCreateEvents are emitted when initializing the genesis state, so we need to mock
+			// the indexer event manager to expect these events.
+			if tc.expectedErr == "" {
+				for i, clobPair := range tc.genesis.ClobPairs {
+					perpetualId := clobtest.MustPerpetualId(clobPair)
+					perpetual := constants.Perpetuals_DefaultGenesisState.Perpetuals[perpetualId]
+					mockIndexerEventManager.On("AddTxnEvent",
+						ctx,
+						indexerevents.SubtypePerpetualMarket,
+						indexerevents.PerpetualMarketEventVersion,
+						indexer_manager.GetBytes(
+							indexerevents.NewPerpetualMarketCreateEvent(
+								perpetualId,
+								uint32(i),
+								perpetual.Params.Ticker,
+								perpetual.Params.MarketId,
+								clobPair.Status,
+								clobPair.QuantumConversionExponent,
+								perpetual.Params.AtomicResolution,
+								clobPair.SubticksPerTick,
+								clobPair.StepBaseQuantums,
+								perpetual.Params.LiquidityTier,
+							),
+						),
+					).Once().Return()
+				}
+			}
 			// If we expect a panic, verify that initializing the genesis state causes a panic and
 			// end the test.
 			if tc.expectedErr != "" {
 				require.PanicsWithError(
 					t,
-					sdkerrors.Wrap(
+					errorsmod.Wrap(
 						tc.expectedErrType,
 						tc.expectedErr,
 					).Error(),
@@ -368,23 +478,13 @@ func TestGenesis(t *testing.T) {
 			// Initialize the CLOB genesis state.
 			clob.InitGenesis(ctx, ks.ClobKeeper, tc.genesis)
 
-			require.True(
-				t,
-				constants.TimeT.Equal(
-					ks.ClobKeeper.MustGetBlockTimeForLastCommittedBlock(ctx),
-				),
-			)
-
 			// Export the CLOB genesis state and verify expectations.
 			got := clob.ExportGenesis(ctx, *ks.ClobKeeper)
 			require.NotNil(t, got)
 			require.Equal(t, tc.genesis.ClobPairs, got.ClobPairs)
 			require.Equal(t, tc.genesis.LiquidationsConfig, got.LiquidationsConfig)
 			require.Equal(t, tc.genesis.BlockRateLimitConfig, got.BlockRateLimitConfig)
-
-			// The number of CLOB pairs in the store should match the amount created thus far.
-			numClobPairs := ks.ClobKeeper.GetNumClobPairs(ctx)
-			require.Equal(t, uint32(len(got.ClobPairs)), numClobPairs)
+			require.Equal(t, tc.genesis.EquityTierLimitConfig, got.EquityTierLimitConfig)
 		})
 	}
 }

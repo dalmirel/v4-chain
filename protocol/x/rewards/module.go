@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
 
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
@@ -15,9 +16,9 @@ import (
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/dydxprotocol/v4/x/rewards/client/cli"
-	"github.com/dydxprotocol/v4/x/rewards/keeper"
-	"github.com/dydxprotocol/v4/x/rewards/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/rewards/client/cli"
+	"github.com/dydxprotocol/v4-chain/protocol/x/rewards/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/rewards/types"
 )
 
 var (
@@ -148,6 +149,16 @@ func (AppModule) ConsensusVersion() uint64 { return 1 }
 func (am AppModule) BeginBlock(_ sdk.Context, _ abci.RequestBeginBlock) {}
 
 // EndBlock contains the logic that is automatically triggered at the end of each block
-func (am AppModule) EndBlock(_ sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
+func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
+	if err := am.keeper.ProcessRewardsForBlock(ctx); err != nil {
+		// Panicking here will only happen due to misconfiguration of the rewards module,
+		// and will lead to consensus failure.
+		am.keeper.Logger(ctx).Error(
+			"failed to process rewards for block",
+			constants.ErrorLogKey,
+			err,
+		)
+	}
+
 	return []abci.ValidatorUpdate{}
 }

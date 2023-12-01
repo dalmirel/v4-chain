@@ -1,14 +1,16 @@
 package process
 
 import (
-	"fmt"
+	"cosmossdk.io/log"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	error_lib "github.com/dydxprotocol/v4-chain/protocol/lib/error"
 	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 )
 
 const ConsensusRound = sdk.ContextKey("consensus_round")
@@ -29,6 +31,7 @@ const ConsensusRound = sdk.ContextKey("consensus_round")
 // Note: stakingKeeper and perpetualKeeper are only needed for MEV calculations.
 func ProcessProposalHandler(
 	txConfig client.TxConfig,
+	bridgeKeeper ProcessBridgeKeeper,
 	clobKeeper ProcessClobKeeper,
 	stakingKeeper ProcessStakingKeeper,
 	perpetualKeeper ProcessPerpetualKeeper,
@@ -55,30 +58,34 @@ func ProcessProposalHandler(
 			currentConsensusRound += 1
 		}
 		ctx = ctx.WithValue(ConsensusRound, currentConsensusRound)
+		logger := ctx.Logger().With(log.ModuleKey, ModuleName)
 
 		// Perform the update of smoothed prices here to ensure that smoothed prices are updated even if a block is later
 		// rejected by consensus. We want smoothed prices to be updated on fixed cadence, and we are piggybacking on
 		// consensus round to do so.
-		if err := pricesKeeper.UpdateSmoothedPrices(ctx); err != nil {
+		if err := pricesKeeper.UpdateSmoothedPrices(ctx, lib.Uint64LinearInterpolate); err != nil {
 			recordErrorMetricsWithLabel(metrics.UpdateSmoothedPrices)
-			ctx.Logger().Error(fmt.Sprintf("UpdateSmoothedPrices failed, err = %v", err))
+			error_lib.LogErrorWithOptionalContext(logger, "UpdateSmoothedPrices failed", err)
 		}
 
-		txs, err := DecodeProcessProposalTxs(ctx, txConfig.TxDecoder(), req, pricesKeeper)
+		txs, err := DecodeProcessProposalTxs(ctx, txConfig.TxDecoder(), req, bridgeKeeper, pricesKeeper)
 		if err != nil {
-			ctx.Logger().Error(fmt.Sprintf("DecodeProcessProposalTxs failed: %v", err))
+			error_lib.LogErrorWithOptionalContext(logger, "DecodeProcessProposalTxs failed", err)
 			recordErrorMetricsWithLabel(metrics.Decode)
 			return abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}
 		}
 
 		err = txs.Validate()
 		if err != nil {
-			ctx.Logger().Error(fmt.Sprintf("DecodeProcessProposalTxs.Validate failed: %v", err))
+			error_lib.LogErrorWithOptionalContext(logger, "DecodeProcessProposalTxs.Validate failed", err)
 			recordErrorMetricsWithLabel(metrics.Validate)
 			return abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}
 		}
 
-		clobKeeper.RecordMevMetrics(ctx, stakingKeeper, perpetualKeeper, txs.ProposedOperationsTx.msg)
+		// Measure MEV metrics if enabled.
+		if clobKeeper.RecordMevMetricsIsEnabled() {
+			clobKeeper.RecordMevMetrics(ctx, stakingKeeper, perpetualKeeper, txs.ProposedOperationsTx.msg)
+		}
 
 		// Record a success metric.
 		recordSuccessMetrics(ctx, txs, len(req.Txs))

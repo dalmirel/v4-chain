@@ -4,12 +4,12 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	testutil_memclob "github.com/dydxprotocol/v4/testutil/memclob"
-	sdktest "github.com/dydxprotocol/v4/testutil/sdk"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	testutil_memclob "github.com/dydxprotocol/v4-chain/protocol/testutil/memclob"
+	sdktest "github.com/dydxprotocol/v4-chain/protocol/testutil/sdk"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -27,6 +27,7 @@ func TestRemoveOrder_PanicsIfNotExists(t *testing.T) {
 
 func TestRemoveOrderIfFilled(t *testing.T) {
 	ctx, _, _ := sdktest.NewSdkContextWithMultistore()
+	ctx = ctx.WithIsCheckTx(true)
 	tests := map[string]struct {
 		// State.
 		existingOrders []types.Order
@@ -328,6 +329,7 @@ func TestRemoveOrderIfFilled(t *testing.T) {
 
 			memClobKeeper.On("AddOrderToOrderbookCollatCheck", mock.Anything, mock.Anything, mock.Anything).
 				Return(true, make(map[satypes.SubaccountId]satypes.UpdateResult))
+			memClobKeeper.On("ValidateSubaccountEquityTierLimitForNewOrder", mock.Anything, mock.Anything).Return(nil)
 
 			// Set initial fill amount to `0` for all orders.
 			initialCall := memClobKeeper.On("GetOrderFillAmount", mock.Anything, mock.Anything).
@@ -343,11 +345,7 @@ func TestRemoveOrderIfFilled(t *testing.T) {
 
 			// Place all existing orders on the orderbook
 			for _, order := range tc.existingOrders {
-				_, _, _, err := memclob.PlaceOrder(
-					ctx,
-					order,
-					true,
-				)
+				_, _, _, err := memclob.PlaceOrder(ctx, order)
 				require.NoError(t, err)
 			}
 
@@ -388,6 +386,7 @@ func TestRemoveOrderIfFilled(t *testing.T) {
 
 func TestRemoveOrder(t *testing.T) {
 	ctx, _, _ := sdktest.NewSdkContextWithMultistore()
+	ctx = ctx.WithIsCheckTx(true)
 	tests := map[string]struct {
 		// State.
 		existingOrders []types.Order
@@ -623,11 +622,7 @@ func TestRemoveOrder(t *testing.T) {
 
 			// Place all existing orders on the orderbook
 			for _, order := range tc.existingOrders {
-				_, _, _, err := memclob.PlaceOrder(
-					ctx,
-					order,
-					true,
-				)
+				_, _, _, err := memclob.PlaceOrder(ctx, order)
 				require.NoError(t, err)
 			}
 

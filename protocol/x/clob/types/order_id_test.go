@@ -5,9 +5,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 
 	"github.com/stretchr/testify/require"
 )
@@ -15,6 +15,14 @@ import (
 // numOrderIdFlagsTestCases is set to 129 to verify that we run a test case where
 // `OrderFlags` is greater than one byte (proto varints are encoded with 7 bits per byte).
 const numOrderIdFlagsTestCases = 129
+
+func TestToStateKey(t *testing.T) {
+	// Success
+	b, _ := constants.OrderId_Alice_Num0_ClientId0_Clob0.Marshal()
+	require.Equal(t, b, constants.OrderId_Alice_Num0_ClientId0_Clob0.ToStateKey())
+
+	// No panic case. MustMarshal() > Marshal() > MarshalToSizedBuffer() which never returns an error.
+}
 
 func TestIsShortTermOrder(t *testing.T) {
 	for i := 0; i < numOrderIdFlagsTestCases; i++ {

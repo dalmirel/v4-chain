@@ -4,14 +4,14 @@ import (
 	"math/big"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 // GetPricePremiumParams includes the parameters used by
 // `ClobKeeper.GetPricePremiumForPerpetual` and
 // `MemClob.GetPricePremium` to get the price premium.
 type GetPricePremiumParams struct {
-	MarketPrice                 pricestypes.MarketPrice
+	IndexPrice                  pricestypes.MarketPrice
 	BaseAtomicResolution        int32
 	QuoteAtomicResolution       int32
 	ImpactNotionalQuoteQuantums *big.Int
@@ -67,4 +67,38 @@ type PerpetualsKeeper interface {
 	) (
 		err error,
 	)
+	HasAuthority(authority string) bool
+	CreatePerpetual(
+		ctx sdk.Context,
+		id uint32,
+		ticker string,
+		marketId uint32,
+		atomicResolution int32,
+		defaultFundingPpm int32,
+		liquidityTier uint32,
+	) (Perpetual, error)
+	ModifyPerpetual(
+		ctx sdk.Context,
+		id uint32,
+		ticker string,
+		marketId uint32,
+		defaultFundingPpm int32,
+		liquidityTier uint32,
+	) (Perpetual, error)
+	SetLiquidityTier(
+		ctx sdk.Context,
+		id uint32,
+		name string,
+		initialMarginPpm uint32,
+		maintenanceFractionPpm uint32,
+		basePositionNotional uint64,
+		impactNotional uint64,
+	) (
+		liquidityTier LiquidityTier,
+		err error,
+	)
+	SetParams(
+		ctx sdk.Context,
+		params Params,
+	) error
 }

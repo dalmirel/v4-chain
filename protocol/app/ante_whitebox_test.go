@@ -1,9 +1,12 @@
 package app
 
 import (
-	"github.com/dydxprotocol/v4/x/clob/rate_limit"
 	"reflect"
 	"testing"
+
+	delaymsgmoduletypes "github.com/dydxprotocol/v4-chain/protocol/x/delaymsg/types"
+
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/rate_limit"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
@@ -12,18 +15,17 @@ import (
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	feegrantkeeper "github.com/cosmos/cosmos-sdk/x/feegrant/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	"github.com/dydxprotocol/v4/app/basic_manager"
-	libante "github.com/dydxprotocol/v4/lib/ante"
-	"github.com/dydxprotocol/v4/lib/encoding"
-	clobante "github.com/dydxprotocol/v4/x/clob/ante"
-	clobmodulekeeper "github.com/dydxprotocol/v4/x/clob/keeper"
-	clobmodulememclob "github.com/dydxprotocol/v4/x/clob/memclob"
-	"github.com/dydxprotocol/v4/x/clob/types"
+	libante "github.com/dydxprotocol/v4-chain/protocol/lib/ante"
+	clobante "github.com/dydxprotocol/v4-chain/protocol/x/clob/ante"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/flags"
+	clobmodulekeeper "github.com/dydxprotocol/v4-chain/protocol/x/clob/keeper"
+	clobmodulememclob "github.com/dydxprotocol/v4-chain/protocol/x/clob/memclob"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 	"github.com/stretchr/testify/require"
 )
 
 func newTestHandlerOptions() HandlerOptions {
-	encodingConfig := encoding.MakeEncodingConfig(basic_manager.ModuleBasics)
+	encodingConfig := GetEncodingConfig()
 	appCodec := encodingConfig.Codec
 	txConfig := encodingConfig.TxConfig
 
@@ -47,14 +49,17 @@ func newTestHandlerOptions() HandlerOptions {
 	feeGrantKeeper := feegrantkeeper.NewKeeper(appCodec, nil, accountKeeper)
 
 	memClob := clobmodulememclob.NewMemClobPriceTimePriority(false)
-	untriggeredConditionalOrders := make(map[types.ClobPairId]clobmodulekeeper.UntriggeredConditionalOrders)
 	clobKeeper := clobmodulekeeper.NewKeeper(
 		appCodec,
 		nil,
 		nil,
 		nil,
+		[]string{
+			authtypes.NewModuleAddress(delaymsgmoduletypes.ModuleName).String(),
+			authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		},
 		memClob,
-		untriggeredConditionalOrders,
+		nil,
 		nil,
 		nil,
 		bankKeeper,
@@ -63,8 +68,8 @@ func newTestHandlerOptions() HandlerOptions {
 		nil,
 		nil,
 		nil,
-		"",
-		"",
+		nil,
+		flags.GetDefaultClobFlags(),
 		rate_limit.NewNoOpRateLimiter[*types.MsgPlaceOrder](),
 		rate_limit.NewNoOpRateLimiter[*types.MsgCancelOrder](),
 	)
@@ -79,8 +84,6 @@ func newTestHandlerOptions() HandlerOptions {
 		ClobKeeper: clobKeeper,
 	}
 }
-
-type WrappedHandlerType reflect.Type
 
 func wrapDecoratorStr(decoratorStr string) string {
 	return "(" + decoratorStr + ")"

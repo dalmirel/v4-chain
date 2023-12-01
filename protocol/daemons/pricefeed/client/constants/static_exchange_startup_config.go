@@ -1,15 +1,15 @@
 package constants
 
 import (
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants/exchange_common"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants/exchange_common"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
 )
 
 const (
 	defaultIntervalMs = 2_000
-	// Binance / BinanceUS has a limit of 1_200 request weight per minute.
-	// From testing, a 4_250 interval reaches a peak weight of around 1_040 in a minute.
-	binanceIntervalMs = 4_250
+	// Binance / BinanceUS has a limit of 1_200 request weight per minute. At 40 request weight per
+	// iteration, we can query once every 2 seconds, but increase to 2.5s to allow for some jitter.
+	binanceIntervalMs = 2_500
 	// Bitfinex has a rate limit of 30 requests per minute, so we query every 2.5 seconds
 	// to allow for some jitter, as the 2-second interval occasionally produces 429 responses.
 	bitfinexIntervalMs           = 2_500
@@ -117,6 +117,12 @@ var (
 		// https://docs.cloud.coinbase.com/exchange/docs/rest-rate-limits
 		exchange_common.EXCHANGE_ID_COINBASE_PRO: {
 			ExchangeId: exchange_common.EXCHANGE_ID_COINBASE_PRO,
+			IntervalMs: defaultIntervalMs,
+			TimeoutMs:  defaultTimeoutMs,
+			MaxQueries: defaultMaxQueries,
+		},
+		exchange_common.EXCHANGE_ID_TEST_VOLATILE_EXCHANGE: {
+			ExchangeId: exchange_common.EXCHANGE_ID_TEST_VOLATILE_EXCHANGE,
 			IntervalMs: defaultIntervalMs,
 			TimeoutMs:  defaultTimeoutMs,
 			MaxQueries: defaultMaxQueries,

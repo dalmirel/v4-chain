@@ -4,15 +4,15 @@ import (
 	"math/big"
 	"time"
 
-	indexerevents "github.com/dydxprotocol/v4/indexer/events"
-	indexer_manager "github.com/dydxprotocol/v4/indexer/indexer_manager"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	indexer_manager "github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
 
 	gometrics "github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/lib/metrics"
-	"github.com/dydxprotocol/v4/x/sending/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/x/sending/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 // ProcessTransfer transfers quote balance between two subaccounts.
@@ -53,7 +53,8 @@ func (k Keeper) ProcessTransfer(
 	k.GetIndexerEventManager().AddTxnEvent(
 		ctx,
 		indexerevents.SubtypeTransfer,
-		indexer_manager.GetB64EncodedEventMessage(
+		indexerevents.TransferEventVersion,
+		indexer_manager.GetBytes(
 			k.GenerateTransferEvent(pendingTransfer),
 		),
 	)
@@ -111,14 +112,34 @@ func (k Keeper) ProcessDepositToSubaccount(
 			float32(msgDepositToSubaccount.Quantums),
 			[]gometrics.Label{
 				metrics.GetLabelForIntValue(metrics.AssetId, int(msgDepositToSubaccount.AssetId)),
-				metrics.GetLabelForStringValue(metrics.SenderAddress, msgDepositToSubaccount.Sender),
-				metrics.GetLabelForStringValue(metrics.RecipientAddress, msgDepositToSubaccount.Recipient.Owner),
-				metrics.GetLabelForIntValue(metrics.RecipientSubaccount, int(msgDepositToSubaccount.Recipient.Number)),
 			},
+		)
+
+		// Add deposit event to Indexer block message.
+		k.GetIndexerEventManager().AddTxnEvent(
+			ctx,
+			indexerevents.SubtypeTransfer,
+			indexerevents.TransferEventVersion,
+			indexer_manager.GetBytes(
+				k.GenerateDepositEvent(msgDepositToSubaccount),
+			),
 		)
 	}
 
 	return err
+}
+
+// GenerateDepositEvent takes in a deposit and returns a deposit event.
+func (k Keeper) GenerateDepositEvent(deposit *types.MsgDepositToSubaccount) *indexerevents.TransferEventV1 {
+	return indexerevents.NewDepositEvent(
+		deposit.Sender,
+		satypes.SubaccountId{
+			Owner:  deposit.Recipient.Owner,
+			Number: deposit.Recipient.Number,
+		},
+		deposit.AssetId,
+		satypes.BaseQuantums(deposit.Quantums),
+	)
 }
 
 // ProcessWithdrawFromSubaccount transfers quote balance from a subaccount to an account.
@@ -155,12 +176,48 @@ func (k Keeper) ProcessWithdrawFromSubaccount(
 			float32(msgWithdrawFromSubaccount.Quantums),
 			[]gometrics.Label{
 				metrics.GetLabelForIntValue(metrics.AssetId, int(msgWithdrawFromSubaccount.AssetId)),
-				metrics.GetLabelForStringValue(metrics.SenderAddress, msgWithdrawFromSubaccount.Sender.Owner),
-				metrics.GetLabelForIntValue(metrics.SenderSubaccount, int(msgWithdrawFromSubaccount.Sender.Number)),
-				metrics.GetLabelForStringValue(metrics.RecipientAddress, msgWithdrawFromSubaccount.Recipient),
 			},
+		)
+
+		// Add withdraw event to Indexer block message.
+		k.GetIndexerEventManager().AddTxnEvent(
+			ctx,
+			indexerevents.SubtypeTransfer,
+			indexerevents.TransferEventVersion,
+			indexer_manager.GetBytes(
+				k.GenerateWithdrawEvent(msgWithdrawFromSubaccount),
+			),
 		)
 	}
 
 	return err
+}
+
+// GenerateWithdrawEvent takes in a withdrawal and returns a withdraw event.
+func (k Keeper) GenerateWithdrawEvent(withdraw *types.MsgWithdrawFromSubaccount) *indexerevents.TransferEventV1 {
+	return indexerevents.NewWithdrawEvent(
+		satypes.SubaccountId{
+			Owner:  withdraw.Sender.Owner,
+			Number: withdraw.Sender.Number,
+		},
+		withdraw.Recipient,
+		withdraw.AssetId,
+		satypes.BaseQuantums(withdraw.Quantums),
+	)
+}
+
+func (k Keeper) SendFromModuleToAccount(
+	ctx sdk.Context,
+	msg *types.MsgSendFromModuleToAccount,
+) (err error) {
+	if err = msg.ValidateBasic(); err != nil {
+		return err
+	}
+
+	return k.bankKeeper.SendCoinsFromModuleToAccount(
+		ctx,
+		msg.GetSenderModuleName(),
+		sdk.MustAccAddressFromBech32(msg.GetRecipient()),
+		sdk.NewCoins(msg.Coin),
+	)
 }

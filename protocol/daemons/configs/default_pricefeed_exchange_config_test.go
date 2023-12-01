@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dydxprotocol/v4/daemons/configs"
-	"github.com/dydxprotocol/v4/daemons/constants"
-	pfconstants "github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants/exchange_common"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/configs"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/constants"
+	pfconstants "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants/exchange_common"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
 
 	tmos "github.com/cometbft/cometbft/libs/os"
 	"github.com/stretchr/testify/require"
@@ -38,12 +38,12 @@ const (
 	# cannot be 0. For multi-market API exchanges, the behavior will default to 1.
 	[[exchanges]]
 	ExchangeId = "Binance"
-	IntervalMs = 4250
+	IntervalMs = 2500
 	TimeoutMs = 3000
 	MaxQueries = 1
 	[[exchanges]]
 	ExchangeId = "BinanceUS"
-	IntervalMs = 4250
+	IntervalMs = 2500
 	TimeoutMs = 3000
 	MaxQueries = 1
 	[[exchanges]]
@@ -101,6 +101,11 @@ const (
 	IntervalMs = 2000
 	TimeoutMs = 3000
 	MaxQueries = 1
+	[[exchanges]]
+	ExchangeId = "TestVolatileExchange"
+	IntervalMs = 2000
+	TimeoutMs = 3000
+	MaxQueries = 3
 `
 )
 

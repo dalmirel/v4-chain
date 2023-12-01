@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dydxprotocol/v4/lib"
-	big_testutil "github.com/dydxprotocol/v4/testutil/big"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	big_testutil "github.com/dydxprotocol/v4-chain/protocol/testutil/big"
 
 	"github.com/stretchr/testify/require"
 )
@@ -207,6 +207,16 @@ func TestBigIntMulPpm(t *testing.T) {
 			input:          big.NewInt(1_000_000),
 			ppm:            math.MaxUint32,
 			expectedResult: big.NewInt(4_294_967_295),
+		},
+		"Positive rounding towards negative infinity": {
+			input:          big.NewInt(3),
+			ppm:            500_000,
+			expectedResult: big.NewInt(1), // 3 * .5 = 1.5, rounds down to 1
+		},
+		"Negative rounding towards negative infinity": {
+			input:          big.NewInt(-3),
+			ppm:            500_000,
+			expectedResult: big.NewInt(-2), // -3 * .5 = -1.5, rounds down to -2
 		},
 		"0 input": {
 			input:          big.NewInt(0),

@@ -7,11 +7,12 @@ import (
 
 	"github.com/cometbft/cometbft/libs/log"
 
+	sdklog "cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/x/feetiers/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types"
 )
 
 type (
@@ -19,6 +20,7 @@ type (
 		cdc         codec.BinaryCodec
 		statsKeeper types.StatsKeeper
 		storeKey    storetypes.StoreKey
+		authorities map[string]struct{}
 	}
 )
 
@@ -26,16 +28,23 @@ func NewKeeper(
 	cdc codec.BinaryCodec,
 	statsKeeper types.StatsKeeper,
 	storeKey storetypes.StoreKey,
+	authorities []string,
 ) *Keeper {
 	return &Keeper{
 		cdc:         cdc,
 		statsKeeper: statsKeeper,
 		storeKey:    storeKey,
+		authorities: lib.UniqueSliceToSet(authorities),
 	}
 }
 
+func (k Keeper) HasAuthority(authority string) bool {
+	_, ok := k.authorities[authority]
+	return ok
+}
+
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
-	return ctx.Logger().With("module", fmt.Sprintf("x/%s", types.ModuleName))
+	return ctx.Logger().With(sdklog.ModuleKey, fmt.Sprintf("x/%s", types.ModuleName))
 }
 
 func (k Keeper) InitializeForGenesis(ctx sdk.Context) {}
@@ -85,7 +94,7 @@ func (k Keeper) GetPerpetualFeePpm(ctx sdk.Context, address string, isTaker bool
 	return userTier.MakerFeePpm
 }
 
-// GetLowestMakerFee returns the lowest maker fee amoung any tiers.
+// GetLowestMakerFee returns the lowest maker fee among any tiers.
 func (k Keeper) GetLowestMakerFee(ctx sdk.Context) int32 {
 	feeParams := k.GetPerpetualFeeParams(ctx)
 

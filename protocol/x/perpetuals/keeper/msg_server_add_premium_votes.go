@@ -5,11 +5,10 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/perpetuals/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
 )
 
 // AddPremiumVotes add new premium sample votes from a proposer to the application.
-// TODO(DEC-1310): Rename this message handler.
 func (k msgServer) AddPremiumVotes(
 	goCtx context.Context,
 	msg *types.MsgAddPremiumVotes,

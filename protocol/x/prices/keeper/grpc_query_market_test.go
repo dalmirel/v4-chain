@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -9,13 +10,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/testutil/nullify"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/nullify"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 func TestMarketPriceQuerySingle(t *testing.T) {
-	ctx, keeper, _, _, _, _ := keepertest.PricesKeepers(t)
+	ctx, keeper, _, _, _, mockTimeProvider := keepertest.PricesKeepers(t)
+	mockTimeProvider.On("Now").Return(constants.TimeT)
 	wctx := sdk.WrapSDKContext(ctx)
 	msgs := keepertest.CreateNMarkets(t, ctx, keeper, 2)
 	for _, tc := range []struct {
@@ -66,7 +68,8 @@ func TestMarketPriceQuerySingle(t *testing.T) {
 }
 
 func TestMarketPriceQueryPaginated(t *testing.T) {
-	ctx, keeper, _, _, _, _ := keepertest.PricesKeepers(t)
+	ctx, keeper, _, _, _, mockTimeProvider := keepertest.PricesKeepers(t)
+	mockTimeProvider.On("Now").Return(constants.TimeT)
 	wctx := sdk.WrapSDKContext(ctx)
 	msgs := keepertest.CreateNMarkets(t, ctx, keeper, 5)
 	prices := make([]types.MarketPrice, len(msgs))
@@ -126,7 +129,8 @@ func TestMarketPriceQueryPaginated(t *testing.T) {
 }
 
 func TestMarketParamQuerySingle(t *testing.T) {
-	ctx, keeper, _, _, _, _ := keepertest.PricesKeepers(t)
+	ctx, keeper, _, _, _, mockTimeProvider := keepertest.PricesKeepers(t)
+	mockTimeProvider.On("Now").Return(constants.TimeT)
 	wctx := sdk.WrapSDKContext(ctx)
 	msgs := keepertest.CreateNMarkets(t, ctx, keeper, 2)
 	for _, tc := range []struct {
@@ -177,7 +181,8 @@ func TestMarketParamQuerySingle(t *testing.T) {
 }
 
 func TestMarketParamQueryPaginated(t *testing.T) {
-	ctx, keeper, _, _, _, _ := keepertest.PricesKeepers(t)
+	ctx, keeper, _, _, _, mockTimeProvider := keepertest.PricesKeepers(t)
+	mockTimeProvider.On("Now").Return(constants.TimeT)
 	wctx := sdk.WrapSDKContext(ctx)
 	msgs := keepertest.CreateNMarkets(t, ctx, keeper, 5)
 	params := make([]types.MarketParam, len(msgs))

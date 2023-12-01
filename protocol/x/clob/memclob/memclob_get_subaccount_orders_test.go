@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dydxprotocol/v4/testutil/constants"
-	sdktest "github.com/dydxprotocol/v4/testutil/sdk"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	sdktest "github.com/dydxprotocol/v4-chain/protocol/testutil/sdk"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetSubaccountOrders(t *testing.T) {
 	ctx, _, _ := sdktest.NewSdkContextWithMultistore()
+	ctx = ctx.WithIsCheckTx(true)
 	tests := map[string]struct {
 		// State.
 		memclobOrders []types.Order
@@ -235,6 +236,7 @@ func TestGetSubaccountOrders(t *testing.T) {
 
 func TestGetSubaccountOrders_OrderNotFoundPanics(t *testing.T) {
 	ctx, _, _ := sdktest.NewSdkContextWithMultistore()
+	ctx = ctx.WithIsCheckTx(true)
 	memclob := NewMemClobPriceTimePriority(false)
 	memclob.openOrders.orderbooksMap[0] = &types.Orderbook{
 		SubaccountOpenClobOrders: map[satypes.SubaccountId]map[types.Order_Side]map[types.OrderId]bool{

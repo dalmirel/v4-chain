@@ -3,17 +3,20 @@ package price_fetcher
 import (
 	"context"
 	"fmt"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	daemontypes "github.com/dydxprotocol/v4-chain/protocol/daemons/types"
+	"math/rand"
 	"sync"
 	"time"
 
 	gometrics "github.com/armon/go-metrics"
 	"github.com/cometbft/cometbft/libs/log"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/handler"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	pricefeedmetrics "github.com/dydxprotocol/v4/daemons/pricefeed/metrics"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/handler"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	pricefeedmetrics "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 	"gopkg.in/typ.v4/lists"
 )
 
@@ -53,11 +56,19 @@ func NewPriceFetcher(
 	*PriceFetcher,
 	error,
 ) {
+	// Configure price fetcher logger to have fetcher-specific metadata.
+	pfLogger := logger.With(
+		constants.SubmoduleLogKey,
+		constants.PriceFetcherSubmoduleName,
+		constants.ExchangeIdLogKey,
+		exchangeStartupConfig.ExchangeId,
+	)
+
 	pf := &PriceFetcher{
 		exchangeStartupConfig: exchangeStartupConfig,
 		exchangeDetails:       exchangeDetails,
 		queryHandler:          queryHandler,
-		logger:                logger,
+		logger:                pfLogger,
 		bCh:                   bCh,
 		mutableState:          &mutableState{},
 	}
@@ -79,7 +90,7 @@ func (p *PriceFetcher) GetExchangeId() types.ExchangeId {
 
 // UpdateMutableExchangeConfig updates the price fetcher with the most current copy of the exchange config, as
 // well as all markets supported by the exchange.
-// This method is added to support the MutableExchangeConfigUpdater interface.
+// This method is added to support the ExchangeConfigUpdater interface.
 func (p *PriceFetcher) UpdateMutableExchangeConfig(
 	newConfig *types.MutableExchangeMarketConfig,
 	newMarketConfigs []*types.MutableMarketConfig,
@@ -145,8 +156,8 @@ func (p *PriceFetcher) getNumQueriesPerTaskLoop() int {
 
 // RunTaskLoop queries the exchange for market prices.
 // Each goroutine makes a single exchange query for a specific set of one or more markets.
-// RunTaskLoop blocks until all spwaned goroutines have completed.
-func (pf *PriceFetcher) RunTaskLoop(requestHandler lib.RequestHandler) {
+// RunTaskLoop blocks until all spawned goroutines have completed.
+func (pf *PriceFetcher) RunTaskLoop(requestHandler daemontypes.RequestHandler) {
 	taskLoopDefinition := pf.getTaskLoopDefinition()
 
 	if pf.isMultiMarketAndHasMarkets() {
@@ -174,6 +185,27 @@ func (pf *PriceFetcher) RunTaskLoop(requestHandler lib.RequestHandler) {
 	}
 }
 
+// emitMarketAvailabilityMetrics emits telemetry that tracks whether a market was available when queried on an exchange.
+// Success is tracked by (market, exchange) so that we can track the availability of each market on each exchange.
+func emitMarketAvailabilityMetrics(exchangeId types.ExchangeId, id types.MarketId, available bool) {
+	success := metrics.Success
+	if !available {
+		success = metrics.Error
+	}
+	telemetry.IncrCounterWithLabels(
+		[]string{
+			metrics.PricefeedDaemon,
+			metrics.PriceFetcherQueryForMarket,
+			success,
+		},
+		1,
+		[]gometrics.Label{
+			pricefeedmetrics.GetLabelForExchangeId(exchangeId),
+			pricefeedmetrics.GetLabelForMarketId(id),
+		},
+	)
+}
+
 // runSubTask makes a single query to an exchange for market prices. This query can be for 1 or
 // n markets.
 // For single market exchanges, a task loop execution will execute multiple runSubTask goroutines, where
@@ -182,7 +214,7 @@ func (pf *PriceFetcher) RunTaskLoop(requestHandler lib.RequestHandler) {
 // the taskLoopDefinition. For multi-market exchanges, the taskLoop will execute exactly one subtask, and
 // that subtask will query all markets defined in the taskLoopDefinition.
 func (pf *PriceFetcher) runSubTask(
-	requestHandler lib.RequestHandler,
+	requestHandler daemontypes.RequestHandler,
 	marketIds []types.MarketId,
 	taskLoopDefinition *taskLoopDefinition,
 ) {
@@ -219,7 +251,7 @@ func (pf *PriceFetcher) runSubTask(
 		[]gometrics.Label{pricefeedmetrics.GetLabelForExchangeId(exchangeId)},
 	)
 
-	prices, unavailableMarkets, err := pf.queryHandler.Query(
+	prices, _, err := pf.queryHandler.Query(
 		ctxWithTimeout,
 		&pf.exchangeDetails,
 		taskLoopDefinition.mutableExchangeConfig,
@@ -228,9 +260,26 @@ func (pf *PriceFetcher) runSubTask(
 		taskLoopDefinition.marketExponents,
 	)
 
+	// Emit metrics at the `AvailableMarketsSampleRate`.
+	emitMetricsSample := rand.Float64() < metrics.AvailableMarketsSampleRate
+
 	if err != nil {
 		pf.writeToBufferedChannel(exchangeId, nil, err)
+
+		// Since the query failed, report all markets as unavailable, according to the sampling rate.
+		if emitMetricsSample {
+			for _, marketId := range marketIds {
+				emitMarketAvailabilityMetrics(exchangeId, marketId, false)
+			}
+		}
+
 		return
+	}
+
+	// Track which markets were available when queried, and which were not, for telemetry.
+	availableMarkets := make(map[types.MarketId]bool, len(marketIds))
+	for _, marketId := range marketIds {
+		availableMarkets[marketId] = false
 	}
 
 	for _, price := range prices {
@@ -251,23 +300,26 @@ func (pf *PriceFetcher) runSubTask(
 
 		// Log each new price (per-market per-exchange).
 		pf.logger.Debug(
-			fmt.Sprintf(
-				"Adding new price for market. Price: %d. MarketId: %d. LastUpdatedAt: %v. ExchangeId: '%v'",
-				price.Price,
-				price.MarketId,
-				price.LastUpdatedAt,
-				exchangeId,
-			),
+			"price_fetcher: Adding new price for market.",
+			constants.PriceLogKey,
+			price.Price,
+			constants.MarketIdLogKey,
+			price.MarketId,
+			"LastUpdatedAt",
+			price.LastUpdatedAt,
 		)
+
+		// Report market as available.
+		availableMarkets[price.MarketId] = true
 
 		pf.writeToBufferedChannel(exchangeId, price, err)
 	}
-	for market, error := range unavailableMarkets {
-		pf.writeToBufferedChannel(
-			exchangeId,
-			nil,
-			fmt.Errorf("Market %d unavailable on exchange '%v' (%w)", market, exchangeId, error),
-		)
+
+	// Emit metrics on this exchange's market availability according to the sampling rate.
+	if emitMetricsSample {
+		for marketId, available := range availableMarkets {
+			emitMarketAvailabilityMetrics(exchangeId, marketId, available)
+		}
 	}
 }
 
@@ -281,12 +333,7 @@ func (pf *PriceFetcher) writeToBufferedChannel(
 	// Sanity check that the channel is not full already.
 	if len(pf.bCh) == constants.FixedBufferSize {
 		// Log if writing to buffered channel failed.
-		pf.logger.Error(
-			fmt.Sprintf(
-				"Pricefeed daemon's shared buffer is full. Exchange '%v'.",
-				exchangeId,
-			),
-		)
+		pf.logger.Error("Pricefeed daemon's shared buffer is full.")
 	}
 
 	pf.bCh <- &PriceFetcherSubtaskResponse{

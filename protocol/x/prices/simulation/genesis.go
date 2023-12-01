@@ -7,9 +7,9 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/testutil/sim_helpers"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/sim_helpers"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 // genNumMarkets returns randomized num markets.
@@ -77,6 +77,8 @@ func RandomizedGenState(simState *module.SimulationState) {
 			Exponent:          int32(marketExponent),
 			MinExchanges:      uint32(minExchanges),
 			MinPriceChangePpm: uint32(simtypes.RandIntBetween(r, 1, int(lib.MaxPriceChangePpm))),
+			// The simulation tests don't run the daemon currently so we pass in empty exchange config.
+			ExchangeConfigJson: "{}",
 		}
 		marketPrices[i] = types.MarketPrice{
 			Id:       uint32(i),

@@ -3,18 +3,18 @@ package server_test
 import (
 	"errors"
 	"fmt"
+	"github.com/cometbft/cometbft/libs/log"
+	pricefeedconstants "github.com/dydxprotocol/v4-chain/protocol/daemons/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/server"
+	daemontypes "github.com/dydxprotocol/v4-chain/protocol/daemons/types"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/grpc"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"net"
 	"os"
 	"testing"
-
-	"github.com/cometbft/cometbft/libs/log"
-	pricefeedconstants "github.com/dydxprotocol/v4/daemons/constants"
-	"github.com/dydxprotocol/v4/daemons/server"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/grpc"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
+	"time"
 )
 
 const (
@@ -158,16 +158,62 @@ func TestStart_MixedInvalid(t *testing.T) {
 	}
 }
 
+func TestRegisterDaemon_DoesNotPanic(t *testing.T) {
+	grpcServer := &mocks.GrpcServer{}
+	grpcServer.On("Stop").Return().Once()
+	server := server.NewServer(
+		log.NewNopLogger(),
+		grpcServer,
+		&mocks.FileHandler{},
+		grpc.SocketPath,
+		"test",
+	)
+	defer server.Stop()
+
+	require.NotPanics(t, func() {
+		server.ExpectPricefeedDaemon(5 * time.Second)
+	})
+}
+
+func TestRegisterDaemon_DoubleRegistrationPanics(t *testing.T) {
+	grpcServer := &mocks.GrpcServer{}
+	grpcServer.On("Stop").Return().Once()
+	server := server.NewServer(
+		log.NewNopLogger(),
+		grpcServer,
+		&mocks.FileHandler{},
+		grpc.SocketPath,
+		"test",
+	)
+	defer server.Stop()
+
+	// First registration should not panic.
+	require.NotPanics(t, func() {
+		server.ExpectPricefeedDaemon(5 * time.Second)
+	})
+
+	// Second registration should panic.
+	require.PanicsWithError(
+		t,
+		"service pricefeed-daemon already registered",
+		func() {
+			server.ExpectPricefeedDaemon(5 * time.Second)
+		},
+	)
+}
+
 func createServerWithMocks(
-	mockGrpcServer lib.GrpcServer,
-	mockFileHandler lib.FileHandler,
+	mockGrpcServer daemontypes.GrpcServer,
+	mockFileHandler daemontypes.FileHandler,
 ) *server.Server {
 	server := server.NewServer(
 		log.NewNopLogger(),
 		mockGrpcServer,
 		mockFileHandler,
 		grpc.SocketPath,
+		"test",
 	)
+	server.DisableUpdateMonitoringForTesting()
 	return server
 }
 

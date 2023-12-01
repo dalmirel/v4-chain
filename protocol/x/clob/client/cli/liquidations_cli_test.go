@@ -5,6 +5,9 @@ package cli_test
 import (
 	"fmt"
 
+	appflags "github.com/dydxprotocol/v4-chain/protocol/app/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/app/stoppable"
+
 	"math/big"
 	"testing"
 
@@ -12,23 +15,24 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	"github.com/dydxprotocol/v4/dtypes"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/x/clob/client/testutil"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	epochstypes "github.com/dydxprotocol/v4/x/epochs/types"
-	feetierstypes "github.com/dydxprotocol/v4/x/feetiers/types"
-	perptypes "github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
-	sa_testutil "github.com/dydxprotocol/v4/x/subaccounts/client/testutil"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	assettypes "github.com/dydxprotocol/v4-chain/protocol/x/assets/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/client/testutil"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	epochstypes "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types"
+	feetierstypes "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types"
+	perptypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
+	sa_testutil "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/client/testutil"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 
-	"github.com/dydxprotocol/v4/app"
-	daemonflags "github.com/dydxprotocol/v4/daemons/flags"
-	"github.com/dydxprotocol/v4/testutil/appoptions"
-	testutil_bank "github.com/dydxprotocol/v4/testutil/bank"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/network"
+	"github.com/dydxprotocol/v4-chain/protocol/app"
+	daemonflags "github.com/dydxprotocol/v4-chain/protocol/daemons/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/appoptions"
+	testutil_bank "github.com/dydxprotocol/v4-chain/protocol/testutil/bank"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/network"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -68,12 +72,19 @@ func TestLiquidationOrderIntegrationTestSuite(t *testing.T) {
 				panic("incorrect validator type")
 			}
 
-			// Disable the Price daemon in the integration tests.
+			// Disable the Bridge and Price daemons in the integration tests.
 			appOptions.Set(daemonflags.FlagPriceDaemonEnabled, false)
+			appOptions.Set(daemonflags.FlagBridgeDaemonEnabled, false)
+
+			// Make sure the daemon is using the correct GRPC address.
+			appOptions.Set(appflags.GrpcAddress, testval.AppConfig.GRPC.Address)
 
 			// Enable the liquidations daemon in the integration tests.
-			appOptions.Set(daemonflags.FlagGrpcAddress, testval.AppConfig.GRPC.Address)
 			appOptions.Set(daemonflags.FlagUnixSocketAddress, liqTestUnixSocketAddress)
+			// Make sure all daemon-related services are properly stopped.
+			t.Cleanup(func() {
+				stoppable.StopServices(t, testval.AppConfig.GRPC.Address)
+			})
 		},
 	})
 
@@ -134,7 +145,7 @@ func (s *LiquidationsIntegrationTestSuite) SetupSuite() {
 			Id: &satypes.SubaccountId{Owner: s.validatorAddress.String(), Number: liqTestSubaccountNumberOne},
 			AssetPositions: []*satypes.AssetPosition{
 				{
-					AssetId:  lib.UsdcAssetId,
+					AssetId:  assettypes.AssetUsdc.Id,
 					Quantums: dtypes.NewInt(-45_001_000_000), // -$45,001
 				},
 			},
@@ -240,8 +251,8 @@ func (s *LiquidationsIntegrationTestSuite) TestCLILiquidations() {
 	).Int64()
 
 	// Assert that both Subaccounts have the appropriate state.
-	makerFee := fillSizeQuoteQuantums * int64(constants.MakerFeePpm) / int64(lib.OneMillion)
-	takerFee := fillSizeQuoteQuantums * int64(constants.TakerFeePpm) / int64(lib.OneMillion)
+	takerFee := fillSizeQuoteQuantums * int64(constants.PerpetualFeeParams.Tiers[0].TakerFeePpm) / int64(lib.OneMillion)
+	makerFee := fillSizeQuoteQuantums * int64(constants.PerpetualFeeParams.Tiers[0].MakerFeePpm) / int64(lib.OneMillion)
 	subaccountZeroInitialQuoteBalance := constants.Usdc_Asset_100_000.GetBigQuantums().Int64()
 	s.Require().Contains(
 		[]*big.Int{

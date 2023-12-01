@@ -2,11 +2,7 @@ package keeper
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/feetiers/types"
-)
-
-const (
-	paramsKey = "PerpetualFeeParams"
+	"github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types"
 )
 
 // GetPerpetualFeeParams returns the PerpetualFeeParams in state.
@@ -16,7 +12,7 @@ func (k Keeper) GetPerpetualFeeParams(
 	params types.PerpetualFeeParams,
 ) {
 	store := ctx.KVStore(k.storeKey)
-	b := store.Get([]byte(paramsKey))
+	b := store.Get([]byte(types.PerpetualFeeParamsKey))
 	k.cdc.MustUnmarshal(b, &params)
 	return params
 }
@@ -33,7 +29,7 @@ func (k Keeper) SetPerpetualFeeParams(
 
 	store := ctx.KVStore(k.storeKey)
 	b := k.cdc.MustMarshal(&params)
-	store.Set([]byte(paramsKey), b)
+	store.Set([]byte(types.PerpetualFeeParamsKey), b)
 
 	return nil
 }

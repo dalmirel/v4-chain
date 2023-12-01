@@ -10,10 +10,10 @@ import (
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/testutil/sim_helpers"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	perptypes "github.com/dydxprotocol/v4/x/perpetuals/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/sim_helpers"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	perptypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
 )
 
 // genNumClobPairs returns a randomized number of CLOB pairs.
@@ -23,8 +23,10 @@ func genNumClobPairs(r *rand.Rand, isReasonableGenesis bool, numPerpetuals int) 
 	}
 	return simtypes.RandIntBetween(
 		r,
-		sim_helpers.MinValidClobPairs,
-		sim_helpers.MaxValidClobPairs+1,
+		numPerpetuals/2+1,
+		// Since each clob pair is required to have a unique perpetual,
+		// we can't have more clob pairs than perpetuals.
+		numPerpetuals,
 	)
 }
 
@@ -42,24 +44,11 @@ func genRandomClob(
 		sim_helpers.PickGenesisParameter(sim_helpers.MinQuantumConversionExponent, isReasonableGenesis),
 		sim_helpers.PickGenesisParameter(sim_helpers.MaxQuantumConversionExponent, isReasonableGenesis)+1,
 	))
-	clobPair.TakerFeePpm = uint32(simtypes.RandIntBetween(
-		r,
-		sim_helpers.PickGenesisParameter(sim_helpers.MinFeePpm, isReasonableGenesis),
-		sim_helpers.PickGenesisParameter(sim_helpers.MaxFeePpm, isReasonableGenesis)+1,
-	))
 	clobPair.StepBaseQuantums = uint64(simtypes.RandIntBetween(
 		r,
 		sim_helpers.PickGenesisParameter(sim_helpers.MinStepBaseQuantums, isReasonableGenesis),
 		sim_helpers.PickGenesisParameter(sim_helpers.MaxStepBaseQuantums, isReasonableGenesis)+1,
 	))
-	clobPair.MinOrderBaseQuantums = alignToStepBaseQuantums(
-		clobPair.StepBaseQuantums,
-		uint64(simtypes.RandIntBetween(
-			r,
-			sim_helpers.PickGenesisParameter(sim_helpers.MinOrderBaseQuantums, isReasonableGenesis),
-			sim_helpers.PickGenesisParameter(sim_helpers.MaxOrderBaseQuantums, isReasonableGenesis)+1,
-		)),
-	)
 	clobPair.SubticksPerTick = uint32(simtypes.RandIntBetween(
 		r,
 		sim_helpers.PickGenesisParameter(sim_helpers.MinSubticksPerTick, isReasonableGenesis),
@@ -67,13 +56,6 @@ func genRandomClob(
 	))
 
 	clobPair.Id = clobPairId.ToUint32()
-	clobPair.MakerFeePpm = uint32(
-		simtypes.RandIntBetween(
-			r,
-			sim_helpers.PickGenesisParameter(sim_helpers.MinFeePpm, isReasonableGenesis),
-			int(clobPair.TakerFeePpm)+1,
-		),
-	)
 
 	perpetualClobMetadata := createPerpetualClobMetadata(perpetualId)
 	clobPair.Metadata = &perpetualClobMetadata
@@ -82,21 +64,6 @@ func genRandomClob(
 	clobPair.Status = types.ClobPair_STATUS_ACTIVE
 
 	return clobPair
-}
-
-// alignToStepBaseQuantums takes a value and aligns it such that `n % stepBaseQuantums == 0`.
-// It will do this by rounding towards the smallest multiple of `stepBaseQuantums` that is
-// greater than zero.
-func alignToStepBaseQuantums(
-	stepBaseQuantums uint64,
-	seedMinOrderBaseQuantums uint64,
-) uint64 {
-	// `MinOrderBaseQuantums` cannot be smaller than `StepBaseQuantums`.
-	if seedMinOrderBaseQuantums < stepBaseQuantums {
-		return stepBaseQuantums
-	}
-
-	return seedMinOrderBaseQuantums - (seedMinOrderBaseQuantums % stepBaseQuantums)
 }
 
 // createPerpetualClobMetadata returns a `PerpetualClobMetadata`.
@@ -111,21 +78,10 @@ func createPerpetualClobMetadata(perpetualId uint32) types.ClobPair_PerpetualClo
 }
 
 // genClobPairToPerpetualSlice returns a slice of length `numClobPairs`, where each index
-// corresponds to a `ClobPair.Id` and entry is the `Perpetual.Id` that should be assigned to the
+// corresponds to a `ClobPair.Id` and entry is the `perpetual.Params.Id` that should be assigned to the
 // CLOB pair.
 func genClobPairToPerpetualSlice(r *rand.Rand, numClobPairs, numPerpetuals int) []uint32 {
 	perpetuals := sim_helpers.MakeRange(uint32(numPerpetuals))
-
-	// Add additional perpetuals if there are more CLOB pairs than perpetuals.
-	if numClobPairs > numPerpetuals {
-		diff := numClobPairs - numPerpetuals
-		extraPerpetuals := make([]uint32, diff)
-		for i := 0; i < diff; i++ {
-			randomIdx := simtypes.RandIntBetween(r, 0, numPerpetuals)
-			extraPerpetuals[i] = perpetuals[randomIdx]
-		}
-		perpetuals = append(perpetuals, extraPerpetuals...)
-	}
 
 	// Shuffle perpetuals, so we randomize which `ClobPair` gets matched with which `Perpetual`.
 	r.Shuffle(numPerpetuals, func(i, j int) { perpetuals[i], perpetuals[j] = perpetuals[j], perpetuals[i] })
@@ -177,9 +133,6 @@ func RandomizedGenState(simState *module.SimulationState) {
 	clobGenesis.ClobPairs = clobPairs
 
 	clobGenesis.LiquidationsConfig = types.LiquidationsConfig{
-		MaxInsuranceFundQuantumsForDeleveraging: uint64(
-			sim_helpers.GetRandomBucketValue(r, sim_helpers.MaxInsuranceFundQuantumsForDeleveragingBuckets),
-		),
 		// MaxLiquidationFeePpm determines the fee that subaccount usually pays for liquidating a position.
 		// This is typically a very small percentage, so skewing towards lower values here.
 		MaxLiquidationFeePpm: genRandomPositivePpm(r, true),

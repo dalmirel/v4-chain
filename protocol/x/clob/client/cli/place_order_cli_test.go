@@ -4,6 +4,8 @@ package cli_test
 
 import (
 	"fmt"
+	appflags "github.com/dydxprotocol/v4-chain/protocol/app/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/app/stoppable"
 	"math/big"
 	"testing"
 
@@ -11,22 +13,22 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	"github.com/dydxprotocol/v4/app"
-	daemonflags "github.com/dydxprotocol/v4/daemons/flags"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/testutil/appoptions"
-	testutil_bank "github.com/dydxprotocol/v4/testutil/bank"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	testutil "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/testutil/network"
-	cli_testutil "github.com/dydxprotocol/v4/x/clob/client/testutil"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	epochstypes "github.com/dydxprotocol/v4/x/epochs/types"
-	feetierstypes "github.com/dydxprotocol/v4/x/feetiers/types"
-	perptypes "github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
-	sa_testutil "github.com/dydxprotocol/v4/x/subaccounts/client/testutil"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/app"
+	daemonflags "github.com/dydxprotocol/v4-chain/protocol/daemons/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/appoptions"
+	testutil_bank "github.com/dydxprotocol/v4-chain/protocol/testutil/bank"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	testutil "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/network"
+	cli_testutil "github.com/dydxprotocol/v4-chain/protocol/x/clob/client/testutil"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	epochstypes "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types"
+	feetierstypes "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types"
+	perptypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
+	sa_testutil "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/client/testutil"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -63,11 +65,17 @@ func TestPlaceOrderIntegrationTestSuite(t *testing.T) {
 				panic("incorrect validator type")
 			}
 
-			// Disable the Price daemon in the integration tests.
+			// Disable the Bridge and Price daemons in the integration tests.
 			appOptions.Set(daemonflags.FlagPriceDaemonEnabled, false)
+			appOptions.Set(daemonflags.FlagBridgeDaemonEnabled, false)
 
-			// Enable the liquidations daemon in the integration tests.
-			appOptions.Set(daemonflags.FlagGrpcAddress, testval.AppConfig.GRPC.Address)
+			// Make sure the daemon is using the correct GRPC address.
+			appOptions.Set(appflags.GrpcAddress, testval.AppConfig.GRPC.Address)
+
+			// Make sure all daemon-related services are properly stopped.
+			t.Cleanup(func() {
+				stoppable.StopServices(t, testval.AppConfig.GRPC.Address)
+			})
 		},
 	})
 

@@ -1,6 +1,9 @@
 package encoding
 
 import (
+	"testing"
+
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
@@ -24,12 +27,15 @@ import (
 	ibc "github.com/cosmos/ibc-go/v7/modules/core"
 	ibcclientclient "github.com/cosmos/ibc-go/v7/modules/core/02-client/client"
 	ibctm "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
-	custommodule "github.com/dydxprotocol/v4/app/module"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	perpetualtypes "github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
-	sendingtypes "github.com/dydxprotocol/v4/x/sending/types"
-	subaccountsmodule "github.com/dydxprotocol/v4/x/subaccounts"
+	custommodule "github.com/dydxprotocol/v4-chain/protocol/app/module"
+	bridgemodule "github.com/dydxprotocol/v4-chain/protocol/x/bridge"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/feetiers"
+	perpetualtypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
+	sendingtypes "github.com/dydxprotocol/v4-chain/protocol/x/sending/types"
+	subaccountsmodule "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts"
+	"github.com/stretchr/testify/require"
 )
 
 // GetTestEncodingCfg returns an encoding config for testing purposes.
@@ -54,6 +60,7 @@ func GetTestEncodingCfg() testutil.TestEncodingConfig {
 		crisis.AppModuleBasic{},
 		custommodule.SlashingModuleBasic{},
 		feegrantmodule.AppModuleBasic{},
+		feetiers.AppModuleBasic{},
 		ibc.AppModuleBasic{},
 		ibctm.AppModuleBasic{},
 		upgrade.AppModuleBasic{},
@@ -61,6 +68,7 @@ func GetTestEncodingCfg() testutil.TestEncodingConfig {
 		consensus.AppModuleBasic{},
 
 		// Custom modules
+		bridgemodule.AppModuleBasic{},
 		subaccountsmodule.AppModuleBasic{})
 
 	msgInterfacesToRegister := []sdk.Msg{
@@ -90,4 +98,11 @@ func GetTestEncodingCfg() testutil.TestEncodingConfig {
 	}
 
 	return encodingCfg
+}
+
+// EncodeMessageToAny converts a message to an Any object for protobuf encoding.
+func EncodeMessageToAny(t *testing.T, msg sdk.Msg) *codectypes.Any {
+	any, err := codectypes.NewAnyWithValue(msg)
+	require.NoError(t, err)
+	return any
 }

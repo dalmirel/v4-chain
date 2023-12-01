@@ -1,17 +1,17 @@
 package process_test
 
 import (
+	errorsmod "cosmossdk.io/errors"
 	"errors"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/dydxprotocol/v4/app/process"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/api"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/encoding"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/app/process"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/api"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/encoding"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -96,7 +96,7 @@ func TestUpdateMarketPricesTx_Validate(t *testing.T) {
 		"Error: Stateful + Deterministic validation fails": {
 			txBytes:     invalidStatefulMsgTxBytes,
 			indexPrices: constants.AtTimeTSingleExchangePriceUpdate,
-			expectedErr: sdkerrors.Wrap(
+			expectedErr: errorsmod.Wrap(
 				types.ErrInvalidMarketPriceUpdateDeterministic,
 				"market param price (99) does not exist",
 			),
@@ -104,12 +104,12 @@ func TestUpdateMarketPricesTx_Validate(t *testing.T) {
 		"Error: Stateful + NonDeterministic validation fails": {
 			txBytes: validMsgTxBytes, // Msg is valid, but there's no corresponding index price.
 			// Skip index price updates, so the validation fails.
-			expectedErr: sdkerrors.Wrapf(types.ErrIndexPriceNotAvailable, "index price for market (0) is not available"),
+			expectedErr: errorsmod.Wrapf(types.ErrIndexPriceNotAvailable, "index price for market (0) is not available"),
 		},
 		"Error: ValidateBasic fails": {
 			txBytes:     invalidStatelessMsgTxBytes,
 			indexPrices: constants.AtTimeTSingleExchangePriceUpdate,
-			expectedErr: sdkerrors.Wrap(
+			expectedErr: errorsmod.Wrap(
 				process.ErrMsgValidateBasic,
 				"price cannot be 0 for market id (0): Market price update is invalid: stateless.",
 			),
@@ -124,9 +124,9 @@ func TestUpdateMarketPricesTx_Validate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// Setup.
 			ctx, k, _, indexPriceCache, _, mockTimeProvider := keepertest.PricesKeepers(t)
+			mockTimeProvider.On("Now").Return(constants.TimeT)
 			keepertest.CreateTestMarkets(t, ctx, k)
 			indexPriceCache.UpdatePrices(tc.indexPrices)
-			mockTimeProvider.On("Now").Return(constants.TimeT)
 			umpt, err := process.DecodeUpdateMarketPricesTx(ctx, k, constants.TestEncodingCfg.TxConfig.TxDecoder(), tc.txBytes)
 			require.NoError(t, err)
 

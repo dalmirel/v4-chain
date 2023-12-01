@@ -3,9 +3,9 @@ package v1
 import (
 	"fmt"
 
-	"github.com/dydxprotocol/v4/dtypes"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 func SubaccountIdToIndexerSubaccountId(
@@ -103,6 +103,12 @@ func OrderTimeInForceToIndexerOrderTimeInForce(
 	return IndexerOrder_TimeInForce(orderTimeInForce)
 }
 
+func OrderConditionTypeToIndexerOrderConditionType(
+	orderConditionType clobtypes.Order_ConditionType,
+) IndexerOrder_ConditionType {
+	return IndexerOrder_ConditionType(orderConditionType)
+}
+
 func OrderToIndexerOrder(
 	order clobtypes.Order,
 ) IndexerOrder {
@@ -127,14 +133,16 @@ func orderToIndexerOrder_GoodTilBlock(
 	goodTilBlock IndexerOrder_GoodTilBlock,
 ) IndexerOrder {
 	return IndexerOrder{
-		OrderId:        OrderIdToIndexerOrderId(order.OrderId),
-		Side:           OrderSideToIndexerOrderSide(order.Side),
-		Quantums:       order.Quantums,
-		Subticks:       order.Subticks,
-		GoodTilOneof:   &goodTilBlock,
-		TimeInForce:    OrderTimeInForceToIndexerOrderTimeInForce(order.TimeInForce),
-		ReduceOnly:     order.ReduceOnly,
-		ClientMetadata: order.ClientMetadata,
+		OrderId:                         OrderIdToIndexerOrderId(order.OrderId),
+		Side:                            OrderSideToIndexerOrderSide(order.Side),
+		Quantums:                        order.Quantums,
+		Subticks:                        order.Subticks,
+		GoodTilOneof:                    &goodTilBlock,
+		TimeInForce:                     OrderTimeInForceToIndexerOrderTimeInForce(order.TimeInForce),
+		ReduceOnly:                      order.ReduceOnly,
+		ClientMetadata:                  order.ClientMetadata,
+		ConditionType:                   OrderConditionTypeToIndexerOrderConditionType(order.ConditionType),
+		ConditionalOrderTriggerSubticks: order.ConditionalOrderTriggerSubticks,
 	}
 }
 
@@ -143,13 +151,32 @@ func orderToIndexerOrder_GoodTilBlockTime(
 	goodTilBlockTime IndexerOrder_GoodTilBlockTime,
 ) IndexerOrder {
 	return IndexerOrder{
-		OrderId:        OrderIdToIndexerOrderId(order.OrderId),
-		Side:           OrderSideToIndexerOrderSide(order.Side),
-		Quantums:       order.Quantums,
-		Subticks:       order.Subticks,
-		GoodTilOneof:   &goodTilBlockTime,
-		TimeInForce:    OrderTimeInForceToIndexerOrderTimeInForce(order.TimeInForce),
-		ReduceOnly:     order.ReduceOnly,
-		ClientMetadata: order.ClientMetadata,
+		OrderId:                         OrderIdToIndexerOrderId(order.OrderId),
+		Side:                            OrderSideToIndexerOrderSide(order.Side),
+		Quantums:                        order.Quantums,
+		Subticks:                        order.Subticks,
+		GoodTilOneof:                    &goodTilBlockTime,
+		TimeInForce:                     OrderTimeInForceToIndexerOrderTimeInForce(order.TimeInForce),
+		ReduceOnly:                      order.ReduceOnly,
+		ClientMetadata:                  order.ClientMetadata,
+		ConditionType:                   OrderConditionTypeToIndexerOrderConditionType(order.ConditionType),
+		ConditionalOrderTriggerSubticks: order.ConditionalOrderTriggerSubticks,
+	}
+}
+
+func ConvertToClobPairStatus(status clobtypes.ClobPair_Status) ClobPairStatus {
+	switch status {
+	case clobtypes.ClobPair_STATUS_ACTIVE:
+		return ClobPairStatus_CLOB_PAIR_STATUS_ACTIVE
+	case clobtypes.ClobPair_STATUS_PAUSED:
+		return ClobPairStatus_CLOB_PAIR_STATUS_PAUSED
+	case clobtypes.ClobPair_STATUS_CANCEL_ONLY:
+		return ClobPairStatus_CLOB_PAIR_STATUS_CANCEL_ONLY
+	case clobtypes.ClobPair_STATUS_POST_ONLY:
+		return ClobPairStatus_CLOB_PAIR_STATUS_POST_ONLY
+	case clobtypes.ClobPair_STATUS_INITIALIZING:
+		return ClobPairStatus_CLOB_PAIR_STATUS_INITIALIZING
+	default:
+		panic("invalid clob pair status")
 	}
 }

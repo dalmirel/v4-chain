@@ -3,18 +3,22 @@ package keeper
 import (
 	"errors"
 	"fmt"
-	"github.com/dydxprotocol/v4/x/clob/rate_limit"
 	"sync/atomic"
 
-	"github.com/dydxprotocol/v4/indexer/indexer_manager"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/rate_limit"
 
 	"github.com/cometbft/cometbft/libs/log"
 
+	sdklog "cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/store/prefix"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/clob/types"
+	flags "github.com/dydxprotocol/v4-chain/protocol/x/clob/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 )
 
 type (
@@ -23,23 +27,27 @@ type (
 		storeKey          storetypes.StoreKey
 		memKey            storetypes.StoreKey
 		transientStoreKey storetypes.StoreKey
+		authorities       map[string]struct{}
 
 		MemClob                      types.MemClob
-		untriggeredConditionalOrders map[types.ClobPairId]UntriggeredConditionalOrders
+		UntriggeredConditionalOrders map[types.ClobPairId]*UntriggeredConditionalOrders
+		PerpetualIdToClobPairId      map[uint32][]types.ClobPairId
 
 		subaccountsKeeper   types.SubaccountsKeeper
 		assetsKeeper        types.AssetsKeeper
 		bankKeeper          types.BankKeeper
+		blockTimeKeeper     types.BlockTimeKeeper
 		feeTiersKeeper      types.FeeTiersKeeper
 		perpetualsKeeper    types.PerpetualsKeeper
 		statsKeeper         types.StatsKeeper
+		rewardsKeeper       types.RewardsKeeper
 		indexerEventManager indexer_manager.IndexerEventManager
 
 		memStoreInitialized *atomic.Bool
 
-		// mev telemetry config
-		mevTelemetryHost       string
-		mevTelemetryIdentifier string
+		Flags flags.ClobFlags
+
+		mevTelemetryConfig MevTelemetryConfig
 
 		// txValidation decoder and antehandler
 		txDecoder sdk.TxDecoder
@@ -59,18 +67,19 @@ func NewKeeper(
 	storeKey storetypes.StoreKey,
 	memKey storetypes.StoreKey,
 	liquidationsStoreKey storetypes.StoreKey,
+	authorities []string,
 	memClob types.MemClob,
-	untriggeredConditionalOrders map[types.ClobPairId]UntriggeredConditionalOrders,
 	subaccountsKeeper types.SubaccountsKeeper,
 	assetsKeeper types.AssetsKeeper,
+	blockTimeKeeper types.BlockTimeKeeper,
 	bankKeeper types.BankKeeper,
 	feeTiersKeeper types.FeeTiersKeeper,
 	perpetualsKeeper types.PerpetualsKeeper,
 	statsKeeper types.StatsKeeper,
+	rewardsKeeper types.RewardsKeeper,
 	indexerEventManager indexer_manager.IndexerEventManager,
 	txDecoder sdk.TxDecoder,
-	mevTelemetryHost string,
-	mevTelemetryIdentifier string,
+	clobFlags flags.ClobFlags,
 	placeOrderRateLimiter rate_limit.RateLimiter[*types.MsgPlaceOrder],
 	cancelOrderRateLimiter rate_limit.RateLimiter[*types.MsgCancelOrder],
 ) *Keeper {
@@ -79,21 +88,29 @@ func NewKeeper(
 		storeKey:                     storeKey,
 		memKey:                       memKey,
 		transientStoreKey:            liquidationsStoreKey,
+		authorities:                  lib.UniqueSliceToSet(authorities),
 		MemClob:                      memClob,
-		untriggeredConditionalOrders: untriggeredConditionalOrders,
+		UntriggeredConditionalOrders: make(map[types.ClobPairId]*UntriggeredConditionalOrders),
+		PerpetualIdToClobPairId:      make(map[uint32][]types.ClobPairId),
 		subaccountsKeeper:            subaccountsKeeper,
 		assetsKeeper:                 assetsKeeper,
+		blockTimeKeeper:              blockTimeKeeper,
 		bankKeeper:                   bankKeeper,
 		feeTiersKeeper:               feeTiersKeeper,
 		perpetualsKeeper:             perpetualsKeeper,
 		statsKeeper:                  statsKeeper,
+		rewardsKeeper:                rewardsKeeper,
 		indexerEventManager:          indexerEventManager,
 		memStoreInitialized:          &atomic.Bool{},
 		txDecoder:                    txDecoder,
-		mevTelemetryHost:             mevTelemetryHost,
-		mevTelemetryIdentifier:       mevTelemetryIdentifier,
-		placeOrderRateLimiter:        placeOrderRateLimiter,
-		cancelOrderRateLimiter:       cancelOrderRateLimiter,
+		mevTelemetryConfig: MevTelemetryConfig{
+			Enabled:    clobFlags.MevTelemetryEnabled,
+			Host:       clobFlags.MevTelemetryHost,
+			Identifier: clobFlags.MevTelemetryIdentifier,
+		},
+		Flags:                  clobFlags,
+		placeOrderRateLimiter:  placeOrderRateLimiter,
+		cancelOrderRateLimiter: cancelOrderRateLimiter,
 	}
 
 	// Provide the keeper to the MemClob.
@@ -103,16 +120,25 @@ func NewKeeper(
 	return keeper
 }
 
+func (k Keeper) HasAuthority(authority string) bool {
+	_, ok := k.authorities[authority]
+	return ok
+}
+
 func (k Keeper) GetIndexerEventManager() indexer_manager.IndexerEventManager {
 	return k.indexerEventManager
 }
 
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
-	return ctx.Logger().With("module", "x/clob")
+	return ctx.Logger().With(
+		sdklog.ModuleKey, "x/clob",
+		metrics.ProposerConsAddress, sdk.ConsAddress(ctx.BlockHeader().ProposerAddress),
+		metrics.CheckTx, ctx.IsCheckTx(),
+		metrics.ReCheckTx, ctx.IsReCheckTx(),
+	)
 }
 
 func (k Keeper) InitializeForGenesis(ctx sdk.Context) {
-	k.setNumClobPairs(ctx, uint32(0))
 }
 
 // InitMemStore initializes the memstore of the `clob` keeper.
@@ -138,18 +164,18 @@ func (k Keeper) InitMemStore(ctx sdk.Context) {
 	// Initialize all the necessary memory stores.
 	for _, keyPrefix := range []string{
 		types.OrderAmountFilledKeyPrefix,
-		types.StatefulOrderPlacementKeyPrefix,
+		types.StatefulOrderKeyPrefix,
 	} {
 		// Retrieve an instance of the memstore.
 		memPrefixStore := prefix.NewStore(
 			memStore,
-			types.KeyPrefix(keyPrefix),
+			[]byte(keyPrefix),
 		)
 
 		// Retrieve an instance of the store.
 		store := prefix.NewStore(
 			ctx.KVStore(k.storeKey),
-			types.KeyPrefix(keyPrefix),
+			[]byte(keyPrefix),
 		)
 
 		// Copy over all keys and values with the current key prefix to the `MemStore`.
@@ -158,6 +184,17 @@ func (k Keeper) InitMemStore(ctx sdk.Context) {
 		for ; iterator.Valid(); iterator.Next() {
 			memPrefixStore.Set(iterator.Key(), iterator.Value())
 		}
+	}
+
+	// Ensure that the stateful order count is accurately represented in the memstore on restart.
+	statefulOrders := k.GetAllStatefulOrders(ctx)
+	for _, order := range statefulOrders {
+		subaccountId := order.GetSubaccountId()
+		k.SetStatefulOrderCount(
+			ctx,
+			subaccountId,
+			k.GetStatefulOrderCount(ctx, subaccountId)+1,
+		)
 	}
 }
 

@@ -6,10 +6,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/x/perpetuals/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/keeper"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -51,12 +51,12 @@ func TestMsgServerAddPremiumVotes(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// Initialize Mocks and Context.
 			mockKeeper := &mocks.PerpetualsKeeper{}
-			ctx, _, _, _, _ := keepertest.PerpetualsKeepers(t)
-			tc.setupMocks(ctx, mockKeeper)
+			pc := keepertest.PerpetualsKeepers(t)
+			tc.setupMocks(pc.Ctx, mockKeeper)
 
 			msgServer := keeper.NewMsgServerImpl(mockKeeper)
 
-			goCtx := sdk.WrapSDKContext(ctx)
+			goCtx := sdk.WrapSDKContext(pc.Ctx)
 
 			if tc.shouldPanic {
 				require.PanicsWithValue(t, tc.expectedErr, func() {

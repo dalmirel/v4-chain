@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	abci "github.com/cometbft/cometbft/abci/types"
-	"github.com/dydxprotocol/v4/app/process"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/app/process"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +21,9 @@ func TestFullNodeProcessProposalHandler(t *testing.T) {
 
 	// Valid operations tx.
 	validOperationsTx := constants.ValidEmptyMsgProposedOperationsTxBytes
+
+	// Valid acknowledge bridges tx.
+	validAcknowledgeBridgesTx := constants.MsgAcknowledgeBridges_Ids0_1_Height0_TxBytes
 
 	// Valid add funding tx.
 	validAddFundingTx := constants.ValidMsgAddPremiumVotesTxBytes
@@ -48,6 +51,7 @@ func TestFullNodeProcessProposalHandler(t *testing.T) {
 		"Invalid transactions": {
 			txsBytes: [][]byte{
 				validOperationsTx,
+				validAcknowledgeBridgesTx,
 				validAddFundingTx,
 				invalidUpdatePriceTx, // invalid.
 			},
@@ -57,6 +61,7 @@ func TestFullNodeProcessProposalHandler(t *testing.T) {
 				validOperationsTx,
 				validMultiMsgOtherTx,  // other txs.
 				validSingleMsgOtherTx, // other txs.
+				validAcknowledgeBridgesTx,
 				validAddFundingTx,
 				validUpdatePriceTx,
 			},
@@ -66,16 +71,20 @@ func TestFullNodeProcessProposalHandler(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Setup.
+			_, bridgeKeeper, _, _, _, _, _ := keepertest.BridgeKeepers(t)
+
 			ctx, pricesKeeper, _, indexPriceCache, _, mockTimeProvider := keepertest.PricesKeepers(t)
+			mockTimeProvider.On("Now").Return(constants.TimeT)
 			keepertest.CreateTestMarkets(t, ctx, pricesKeeper)
 			indexPriceCache.UpdatePrices(constants.AtTimeTSingleExchangePriceUpdate)
-			mockTimeProvider.On("Now").Return(constants.TimeT)
 
 			mockClobKeeper := &mocks.ProcessClobKeeper{}
+			mockClobKeeper.On("RecordMevMetricsIsEnabled").Return(true)
 			mockClobKeeper.On("RecordMevMetrics", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 			handler := process.FullNodeProcessProposalHandler(
 				constants.TestEncodingCfg.TxConfig,
+				bridgeKeeper,
 				mockClobKeeper,
 				&mocks.ProcessStakingKeeper{},
 				&mocks.ProcessPerpetualKeeper{},

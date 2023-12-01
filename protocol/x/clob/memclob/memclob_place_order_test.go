@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"github.com/dydxprotocol/v4/mocks"
-	clobtest "github.com/dydxprotocol/v4/testutil/clob"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	testutil_memclob "github.com/dydxprotocol/v4/testutil/memclob"
-	sdktest "github.com/dydxprotocol/v4/testutil/sdk"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	clobtest "github.com/dydxprotocol/v4-chain/protocol/testutil/clob"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	testutil_memclob "github.com/dydxprotocol/v4-chain/protocol/testutil/memclob"
+	sdktest "github.com/dydxprotocol/v4-chain/protocol/testutil/sdk"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -1909,12 +1909,12 @@ func TestPlaceOrder_MatchOrders_PreexistingMatches(t *testing.T) {
 			},
 			expectedErr: types.ErrOrderFullyFilled,
 		},
-		`Error: Taker replaces fully matched order with an order of larger size but remaining fillable amount is less than
+		`Error: Taker replaces partially matched order with an order of larger size but remaining fillable amount is less than
 		MinOrderBaseQuantums`: {
 			placedMatchableOrders: []types.MatchableOrder{
-				// Match #1: This order is fully matched before the test case as a maker order with the below order.
+				// Match #1: This order is partially matched before the test case as a maker order with the below order.
 				&constants.Order_Alice_Num1_Id10_Clob0_Buy6_Price30_GTB32,
-				// Match #1: This order is partially matched before the test case as a taker order with the above order.
+				// Match #1: This order is fully matched before the test case as a taker order with the above order.
 				&constants.Order_Alice_Num0_Id1_Clob0_Sell5_Price15_GTB15,
 			},
 
@@ -2047,6 +2047,204 @@ func TestPlaceOrder_MatchOrders_PreexistingMatches(t *testing.T) {
 				),
 			},
 			expectedErr: types.ErrOrderFullyFilled,
+		},
+		"Error: Taker is IOC replacement for partially filled IOC order": {
+			placedMatchableOrders: []types.MatchableOrder{
+				&constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20_IOC,
+			},
+
+			order: constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB21_IOC,
+
+			expectedTotalFilledSize: 5,
+			expectedOrderStatus:     types.InternalError,
+			expectedExistingMatches: []expectedMatch{
+				{
+					makerOrder:      &constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+					takerOrder:      &constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20_IOC,
+					matchedQuantums: 5,
+				},
+			},
+			expectedOperations: []types.Operation{
+				clobtest.NewOrderPlacementOperation(
+					constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				),
+				clobtest.NewOrderPlacementOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20_IOC,
+				),
+				clobtest.NewMatchOperation(
+					&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20_IOC,
+					[]types.MakerFill{
+						{
+							MakerOrderId: constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20.OrderId,
+							FillAmount:   5,
+						},
+					},
+				),
+			},
+			expectedInternalOperations: []types.InternalOperation{
+				types.NewShortTermOrderPlacementInternalOperation(
+					constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				),
+				types.NewShortTermOrderPlacementInternalOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20_IOC,
+				),
+				types.NewMatchOrdersInternalOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20_IOC,
+					[]types.MakerFill{
+						{
+							MakerOrderId: constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20.OrderId,
+							FillAmount:   5,
+						},
+					},
+				),
+			},
+
+			expectedErr: types.ErrImmediateExecutionOrderAlreadyFilled,
+		},
+		"Error: Taker is IOC replacement for partially filled order": {
+			placedMatchableOrders: []types.MatchableOrder{
+				&constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+			},
+
+			order: constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB21_IOC,
+
+			expectedTotalFilledSize: 5,
+			expectedOrderStatus:     types.InternalError,
+			expectedExistingMatches: []expectedMatch{
+				{
+					makerOrder:      &constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+					takerOrder:      &constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					matchedQuantums: 5,
+				},
+			},
+			expectedRemainingAsks: []OrderWithRemainingSize{
+				{
+					Order:         constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					RemainingSize: 5,
+				},
+			},
+			expectedOperations: []types.Operation{
+				clobtest.NewOrderPlacementOperation(
+					constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				),
+				clobtest.NewOrderPlacementOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+				),
+				clobtest.NewMatchOperation(
+					&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					[]types.MakerFill{
+						{
+							MakerOrderId: constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20.OrderId,
+							FillAmount:   5,
+						},
+					},
+				),
+			},
+			expectedInternalOperations: []types.InternalOperation{
+				types.NewShortTermOrderPlacementInternalOperation(
+					constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				),
+				types.NewShortTermOrderPlacementInternalOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+				),
+				types.NewMatchOrdersInternalOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					[]types.MakerFill{
+						{
+							MakerOrderId: constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20.OrderId,
+							FillAmount:   5,
+						},
+					},
+				),
+			},
+
+			expectedErr: types.ErrInvalidReplacement,
+		},
+		"Error: Taker is FOK replacement for partially filled order": {
+			placedMatchableOrders: []types.MatchableOrder{
+				&constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+			},
+
+			order: constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB21_FOK,
+
+			expectedTotalFilledSize: 5,
+			expectedOrderStatus:     types.InternalError,
+			expectedExistingMatches: []expectedMatch{
+				{
+					makerOrder:      &constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+					takerOrder:      &constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					matchedQuantums: 5,
+				},
+			},
+			expectedRemainingAsks: []OrderWithRemainingSize{
+				{
+					Order:         constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					RemainingSize: 5,
+				},
+			},
+			expectedOperations: []types.Operation{
+				clobtest.NewOrderPlacementOperation(
+					constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				),
+				clobtest.NewOrderPlacementOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+				),
+				clobtest.NewMatchOperation(
+					&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					[]types.MakerFill{
+						{
+							MakerOrderId: constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20.OrderId,
+							FillAmount:   5,
+						},
+					},
+				),
+			},
+			expectedInternalOperations: []types.InternalOperation{
+				types.NewShortTermOrderPlacementInternalOperation(
+					constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20,
+				),
+				types.NewShortTermOrderPlacementInternalOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+				),
+				types.NewMatchOrdersInternalOperation(
+					constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+					[]types.MakerFill{
+						{
+							MakerOrderId: constants.Order_Bob_Num0_Id11_Clob1_Buy5_Price40_GTB20.OrderId,
+							FillAmount:   5,
+						},
+					},
+				),
+			},
+
+			expectedErr: types.ErrInvalidReplacement,
+		},
+		"IOC Taker replaces unfilled non IOC order": {
+			placedMatchableOrders: []types.MatchableOrder{
+				&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+			},
+
+			order:                      constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB21_IOC,
+			expectedInternalOperations: []types.InternalOperation{},
+
+			expectedOrderStatus:    types.ImmediateOrCancelWouldRestOnBook,
+			expectedToReplaceOrder: true,
+		},
+		"FOK Taker replaces unfilled non IOC order": {
+			placedMatchableOrders: []types.MatchableOrder{
+				&constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB20,
+			},
+
+			order:                      constants.Order_Alice_Num1_Id1_Clob1_Sell10_Price15_GTB21_FOK,
+			expectedInternalOperations: []types.InternalOperation{},
+
+			expectedOrderStatus:    types.InternalError,
+			expectedToReplaceOrder: true,
+
+			expectedErr: types.ErrFokOrderCouldNotBeFullyFilled,
 		},
 	}
 
@@ -2624,9 +2822,10 @@ func TestAddOrderToOrderbook_ErrorPlaceNewFullyFilledOrder(t *testing.T) {
 
 	memClobKeeper.On("AddOrderToOrderbookCollatCheck", mock.Anything, mock.Anything, mock.Anything).
 		Return(true, make(map[satypes.SubaccountId]satypes.UpdateResult))
-
 	memClobKeeper.On("GetStatePosition", mock.Anything, mock.Anything, mock.Anything).
 		Return(big.NewInt(0))
+	memClobKeeper.On("ValidateSubaccountEquityTierLimitForNewOrder", mock.Anything, mock.Anything).
+		Return(nil)
 
 	order := constants.Order_Alice_Num0_Id0_Clob0_Buy5_Price10_GTB15
 	orderId := order.OrderId
@@ -2639,7 +2838,7 @@ func TestAddOrderToOrderbook_ErrorPlaceNewFullyFilledOrder(t *testing.T) {
 
 	// Place an order which was already fully-filled in a previous block as though
 	// we are only now learning of the order itself via p2p.
-	_, _, _, err := memclob.PlaceOrder(ctx, order, true)
+	_, _, _, err := memclob.PlaceOrder(ctx, order)
 
 	// Should fail as the order has already been fully filled.
 	require.ErrorIs(t, err, types.ErrOrderFullyFilled)
@@ -2701,81 +2900,6 @@ func TestUpdateOrderbookStateWithMatchedMakerOrder_PanicsOnInvalidFillAmount(t *
 			types.Order{Quantums: 1},
 		)
 	})
-}
-
-func TestPlaceOrder_ErrOrderWouldExceedMaxOpenOrdersPerClobAndSide(t *testing.T) {
-	tests := map[string]struct {
-		offendingOrder types.Order
-	}{
-		"Short-Term order would exceed max open orders per clob and side": {
-			offendingOrder: constants.Order_Alice_Num0_Id0_Clob0_Buy5_Price10_GTB20,
-		},
-		"Long-Term order would exceed max open orders per clob and side": {
-			offendingOrder: constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15,
-		},
-		"Conditional order would exceed max open orders per clob and side": {
-			offendingOrder: constants.ConditionalOrder_Alice_Num0_Id0_Clob0_Buy5_Price10_GTBT15_StopLoss20,
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			ctx, _, _ := sdktest.NewSdkContextWithMultistore()
-			ctx = ctx.WithIsCheckTx(true)
-
-			// Setup the memclob state.
-			memClobKeeper := testutil_memclob.NewFakeMemClobKeeper()
-			memclob := NewMemClobPriceTimePriority(false)
-			memclob.SetClobKeeper(memClobKeeper)
-
-			// Create a mixture of Short-Term and Stateful orders.
-			orderFlags := []uint32{
-				types.OrderIdFlags_ShortTerm,
-				types.OrderIdFlags_LongTerm,
-				types.OrderIdFlags_Conditional,
-			}
-
-			orders := make([]types.Order, 0, types.MaxSubaccountOrdersPerClobAndSide)
-			for i := 1; i <= types.MaxSubaccountOrdersPerClobAndSide; i++ {
-				order := types.Order{
-					OrderId: types.OrderId{
-						SubaccountId: constants.Alice_Num0,
-						ClientId:     uint32(i),
-						OrderFlags:   orderFlags[i%len(orderFlags)],
-						ClobPairId:   0,
-					},
-					Side:     types.Order_SIDE_BUY,
-					Quantums: 100,
-					Subticks: 5,
-				}
-				if order.IsShortTermOrder() {
-					order.GoodTilOneof = &types.Order_GoodTilBlock{GoodTilBlock: 10}
-				} else {
-					order.GoodTilOneof = &types.Order_GoodTilBlockTime{GoodTilBlockTime: 10}
-				}
-				orders = append(orders, order)
-			}
-
-			// Create the orderbook.
-			memclob.CreateOrderbook(ctx, constants.ClobPair_Btc)
-
-			// Create all orders.
-			createAllOrders(
-				t,
-				ctx,
-				memclob,
-				orders,
-			)
-
-			// Place a new order on the same side and CLOB.
-			_, _, _, err := memclob.PlaceOrder(
-				ctx,
-				tc.offendingOrder,
-				true,
-			)
-			require.ErrorIs(t, err, types.ErrOrderWouldExceedMaxOpenOrdersPerClobAndSide)
-		})
-	}
 }
 
 func TestPlaceOrder_PostOnly(t *testing.T) {
@@ -4083,11 +4207,7 @@ func TestPlaceOrder_GenerateOffchainUpdatesFalse_NoMessagesSent(t *testing.T) {
 	memclob.CreateOrderbook(ctx, constants.ClobPair_Btc)
 
 	// Place a new order.
-	_, _, offchainUpdates, err := memclob.PlaceOrder(
-		ctx,
-		order,
-		true,
-	)
+	_, _, offchainUpdates, err := memclob.PlaceOrder(ctx, order)
 	require.NoError(t, err)
 	require.Empty(t, offchainUpdates.GetMessages())
 }
@@ -4107,8 +4227,8 @@ func TestPlaceOrder_DuplicateOrder(t *testing.T) {
 	memclob.CreateOrderbook(ctx, constants.ClobPair_Btc)
 
 	order := constants.LongTermOrder_Alice_Num0_Id0_Clob0_Buy100_Price10_GTBT15
-	_, _, _, err := memclob.PlaceOrder(ctx, order, true)
+	_, _, _, err := memclob.PlaceOrder(ctx, order)
 	require.NoError(t, err)
-	_, _, _, err = memclob.PlaceOrder(ctx, order, true)
+	_, _, _, err = memclob.PlaceOrder(ctx, order)
 	require.Error(t, err, types.ErrInvalidReplacement)
 }

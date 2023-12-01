@@ -4,6 +4,8 @@ package cli_test
 
 import (
 	"fmt"
+	appflags "github.com/dydxprotocol/v4-chain/protocol/app/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/app/stoppable"
 	"time"
 
 	"path/filepath"
@@ -11,17 +13,17 @@ import (
 
 	networktestutil "github.com/cosmos/cosmos-sdk/testutil/network"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/app"
-	"github.com/dydxprotocol/v4/daemons/configs"
-	daemonflags "github.com/dydxprotocol/v4/daemons/flags"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client"
-	"github.com/dydxprotocol/v4/testutil/appoptions"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/network"
-	epochstypes "github.com/dydxprotocol/v4/x/epochs/types"
-	feetierstypes "github.com/dydxprotocol/v4/x/feetiers/types"
-	"github.com/dydxprotocol/v4/x/prices/client/testutil"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/app"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/configs"
+	daemonflags "github.com/dydxprotocol/v4-chain/protocol/daemons/flags"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/appoptions"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/network"
+	epochstypes "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types"
+	feetierstypes "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/client/testutil"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/suite"
 )
@@ -86,14 +88,26 @@ func (s *PricesIntegrationTestSuite) SetupTest() {
 				panic("incorrect validator type")
 			}
 
-			// Enable the Price daemon in the integration tests.
+			// Disable the Liquidations daemon.
+			appOptions.Set(daemonflags.FlagLiquidationDaemonEnabled, false)
+
+			// Disable the Bridge Daemon.
+			appOptions.Set(daemonflags.FlagBridgeDaemonEnabled, false)
+
+			// Enable the Price daemon.
 			appOptions.Set(daemonflags.FlagPriceDaemonEnabled, true)
+
+			// Make sure the daemon is using the correct GRPC address.
+			appOptions.Set(appflags.GrpcAddress, testval.AppConfig.GRPC.Address)
+
 			homeDir := filepath.Join(testval.Dir, "simd")
 			configs.WriteDefaultPricefeedExchangeToml(homeDir) // must manually create config file.
 			appOptions.Set(daemonflags.FlagPriceDaemonLoopDelayMs, 1_000)
 
-			// Enable the common gRPC daemon server.
-			appOptions.Set(daemonflags.FlagGrpcAddress, testval.AppConfig.GRPC.Address)
+			// Make sure all daemon-related services are properly stopped.
+			s.T().Cleanup(func() {
+				stoppable.StopServices(s.T(), testval.AppConfig.GRPC.Address)
+			})
 		},
 	})
 

@@ -2,8 +2,8 @@ package metrics
 
 import (
 	gometrics "github.com/armon/go-metrics"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	"github.com/dydxprotocol/v4/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 )
 
 const (
@@ -13,11 +13,7 @@ const (
 // GetLabelForMarketId converts a marketId uint32 into a human-readable market pair and then returns the
 // label with the market pair.
 func GetLabelForMarketId(marketId types.MarketId) gometrics.Label {
-	marketPair, exists := StaticMarketPairs[marketId]
-	if !exists {
-		return metrics.GetLabelForStringValue(metrics.MarketId, INVALID)
-	}
-
+	marketPair := GetMarketPairForTelemetry(marketId)
 	return metrics.GetLabelForStringValue(metrics.MarketId, marketPair)
 }
 

@@ -4,7 +4,7 @@ import (
 	gometrics "github.com/armon/go-metrics"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"github.com/dydxprotocol/v4/lib/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 )
 
 const (
@@ -16,6 +16,7 @@ type successMetricParams struct {
 	txs                 PrepareProposalTxs
 	pricesTx            PricesTxResponse
 	fundingTx           FundingTxResponse
+	bridgeTx            BridgeTxResponse
 	operationsTx        OperationsTxResponse
 	numTxsToReturn      int
 	numTxsInOriginalReq int
@@ -54,6 +55,13 @@ func recordSuccessMetrics(params successMetricParams) {
 		float32(params.fundingTx.NumVotes),
 		ModuleName,
 		metrics.NumPremiumVotes,
+	)
+
+	// Bridge tx.
+	telemetry.IncrCounter(
+		float32(params.bridgeTx.NumBridges),
+		ModuleName,
+		metrics.NumBridges,
 	)
 
 	// Operations tx.

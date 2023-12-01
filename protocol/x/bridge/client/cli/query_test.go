@@ -6,13 +6,15 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/dydxprotocol/v4-chain/protocol/app/stoppable"
+
 	"github.com/cosmos/cosmos-sdk/client"
 	clitestutil "github.com/cosmos/cosmos-sdk/testutil/cli"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dydxprotocol/v4/testutil/network"
-	"github.com/dydxprotocol/v4/x/bridge/client/cli"
-	"github.com/dydxprotocol/v4/x/bridge/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/network"
+	"github.com/dydxprotocol/v4-chain/protocol/x/bridge/client/cli"
+	"github.com/dydxprotocol/v4-chain/protocol/x/bridge/types"
 )
 
 // Prevent strconv unused error
@@ -38,6 +40,11 @@ func setupNetwork(
 	cfg.GenesisState[types.ModuleName] = buf
 	net := network.New(t, cfg)
 	ctx := net.Validators[0].ClientCtx
+
+	t.Cleanup(func() {
+		stoppable.StopServices(t, cfg.GRPCAddress)
+	})
+
 	return net, ctx
 }
 
@@ -74,13 +81,24 @@ func TestQuerySafetyParams(t *testing.T) {
 	require.Equal(t, types.DefaultGenesis().SafetyParams, resp.Params)
 }
 
-func TestQueryNextAcknowledgedEventId(t *testing.T) {
+func TestQueryAcknowledgedEventInfo(t *testing.T) {
 	net, ctx := setupNetwork(t)
 
-	out, err := clitestutil.ExecTestCLICmd(ctx, cli.CmdQueryNextAcknowledgedEventId(), []string{})
+	out, err := clitestutil.ExecTestCLICmd(ctx, cli.CmdQueryAcknowledgedEventInfo(), []string{})
 
 	require.NoError(t, err)
-	var resp types.QueryNextAcknowledgedEventIdResponse
+	var resp types.QueryAcknowledgedEventInfoResponse
 	require.NoError(t, net.Config.Codec.UnmarshalJSON(out.Bytes(), &resp))
-	require.Equal(t, types.DefaultGenesis().NextAcknowledgedEventId, resp.Id)
+	require.Equal(t, types.DefaultGenesis().AcknowledgedEventInfo, resp.Info)
+}
+
+func TestQueryDelayedCompleteBridgeMessages(t *testing.T) {
+	net, ctx := setupNetwork(t)
+
+	out, err := clitestutil.ExecTestCLICmd(ctx, cli.CmdQueryDelayedCompleteBridgeMessages(), []string{})
+
+	require.NoError(t, err)
+	var resp types.QueryDelayedCompleteBridgeMessagesResponse
+	require.NoError(t, net.Config.Codec.UnmarshalJSON(out.Bytes(), &resp))
+	require.Equal(t, []types.DelayedCompleteBridgeMessage{}, resp.Messages)
 }

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants/exchange_common"
-	client_types "github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants/exchange_common"
+	client_types "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/require"
 )
@@ -48,17 +48,17 @@ func setupGockResponse(
 
 	var gockResponse *gock.Response
 	switch exchangeName {
-	case exchange_common.EXCHANGE_NAME_BINANCE:
+	case exchange_common.EXCHANGE_ID_BINANCE:
 		gockResponse = NewGockBinanceResponse(
 			response.ResponseCode,
 			response.Tickers,
 		)
-	case exchange_common.EXCHANGE_NAME_BINANCEUS:
+	case exchange_common.EXCHANGE_ID_BINANCE_US:
 		gockResponse = NewGockBinanceUSResponse(
 			response.ResponseCode,
 			response.Tickers,
 		)
-	case exchange_common.EXCHANGE_NAME_BITFINEX:
+	case exchange_common.EXCHANGE_ID_BITFINEX:
 		gockResponse = NewGockBitfinexResponse(
 			response.ResponseCode,
 			response.Tickers,

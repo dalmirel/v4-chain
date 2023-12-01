@@ -2,34 +2,27 @@ package client
 
 import (
 	"context"
-	"errors"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/price_fetcher"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/price_function"
-	pricetypes "github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/price_encoder"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/price_fetcher"
+	daemontypes "github.com/dydxprotocol/v4-chain/protocol/daemons/types"
+	pricetypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 	"net/http"
-	"syscall"
 	"time"
 
 	gometrics "github.com/armon/go-metrics"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/api"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/handler"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	pricefeedmetrics "github.com/dydxprotocol/v4/daemons/pricefeed/metrics"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/lib/metrics"
-)
-
-const (
-	// https://stackoverflow.com/questions/37774624/go-http-get-concurrency-and-connection-reset-by-peer.
-	// This is a good number to start with based on the above link. Adjustments can/will be made accordingly.
-	MaxConnectionsPerExchange = 50
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/api"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/handler"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	pricefeedmetrics "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 )
 
 var (
 	HttpClient = http.Client{
-		Transport: &http.Transport{MaxConnsPerHost: MaxConnectionsPerExchange},
+		Transport: &http.Transport{MaxConnsPerHost: constants.MaxConnectionsPerExchange},
 	}
 )
 
@@ -45,13 +38,14 @@ type SubTaskRunner interface {
 		ctx context.Context,
 		ticker *time.Ticker,
 		stop <-chan bool,
-		exchangeToMarketPrices *types.ExchangeToMarketPrices,
+		exchangeToMarketPrices types.ExchangeToMarketPrices,
 		priceFeedServiceClient api.PriceFeedServiceClient,
 		logger log.Logger,
 	)
 	StartPriceEncoder(
 		exchangeId types.ExchangeId,
-		exchangeToMarketPrices *types.ExchangeToMarketPrices,
+		configs types.PricefeedMutableMarketConfigs,
+		exchangeToMarketPrices types.ExchangeToMarketPrices,
 		logger log.Logger,
 		bCh <-chan *price_fetcher.PriceFetcherSubtaskResponse,
 	)
@@ -85,7 +79,7 @@ func (s *SubTaskRunnerImpl) StartPriceUpdater(
 	ctx context.Context,
 	ticker *time.Ticker,
 	stop <-chan bool,
-	exchangeToMarketPrices *types.ExchangeToMarketPrices,
+	exchangeToMarketPrices types.ExchangeToMarketPrices,
 	priceFeedServiceClient api.PriceFeedServiceClient,
 	logger log.Logger,
 ) {
@@ -104,142 +98,46 @@ func (s *SubTaskRunnerImpl) StartPriceUpdater(
 }
 
 // StartPriceEncoder continuously reads from a buffered channel, reading encoded API responses for exchange
-// requests and inserting them into an `ExchangeToMarketPrices` cache.
+// requests and inserting them into an `ExchangeToMarketPrices` cache, performing currency conversions based
+// on the index price of other markets as necessary.
 // StartPriceEncoder reads price fetcher responses from a shared channel, and does not need a ticker or stop
 // signal from the daemon to exit. It marks itself as done in the daemon's wait group when the price fetcher
 // closes the shared channel.
 func (s *SubTaskRunnerImpl) StartPriceEncoder(
 	exchangeId types.ExchangeId,
-	exchangeToMarketPrices *types.ExchangeToMarketPrices,
+	configs types.PricefeedMutableMarketConfigs,
+	exchangeToMarketPrices types.ExchangeToMarketPrices,
 	logger log.Logger,
 	bCh <-chan *price_fetcher.PriceFetcherSubtaskResponse,
 ) {
+	exchangeMarketConfig, err := configs.GetExchangeMarketConfigCopy(exchangeId)
+	if err != nil {
+		panic(err)
+	}
+
+	marketConfigs, err := configs.GetMarketConfigCopies(exchangeMarketConfig.GetMarketIds())
+	if err != nil {
+		panic(err)
+	}
+
+	priceEncoder, err := price_encoder.NewPriceEncoder(
+		exchangeMarketConfig,
+		marketConfigs,
+		exchangeToMarketPrices,
+		logger,
+		bCh,
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	configs.AddPriceEncoder(priceEncoder)
+
 	// Listen for prices from the buffered channel and update the exchangeToMarketPrices cache.
 	// Also log any errors that occur.
 	for response := range bCh {
-		processPriceFetcherResponse(
-			response,
-			exchangeId,
-			exchangeToMarketPrices,
-			logger,
-		)
-	}
-}
-
-// processPriceFetcherResponse consumes the (price, error) response from the price fetecher and either updates the
-// exchangeToMarketPrices cache with a valid price, or appropriately logs and reports metrics for errors.
-func processPriceFetcherResponse(
-	response *price_fetcher.PriceFetcherSubtaskResponse,
-	exchangeId types.ExchangeId,
-	exchangeToMarketPrices *types.ExchangeToMarketPrices,
-	logger log.Logger,
-) {
-	// Capture nil response on channel close.
-	if response == nil {
-		panic("nil response received from price fetcher")
-	}
-
-	if response.Err == nil {
-		exchangeToMarketPrices.UpdatePrice(exchangeId, response.Price)
-	} else {
-		if errors.Is(response.Err, context.DeadlineExceeded) {
-			// Log info if there are timeout errors in the ingested buffered channel prices.
-			// This is only an info so that there aren't noisy errors when undesirable but
-			// expected behavior occurs.
-			logger.Info(
-				"Failed to update exchange price in price daemon priceEncoder due to timeout",
-				"error",
-				response.Err,
-				"exchangeId",
-				exchangeId,
-			)
-
-			// Measure timeout failures.
-			telemetry.IncrCounterWithLabels(
-				[]string{
-					metrics.PricefeedDaemon,
-					metrics.PriceEncoderUpdatePrice,
-					metrics.HttpGetTimeout,
-					metrics.Error,
-				},
-				1,
-				[]gometrics.Label{
-					pricefeedmetrics.GetLabelForExchangeId(exchangeId),
-				},
-			)
-		} else if price_function.IsExchangeError(response.Err) {
-			// Log info if there are 5xx errors in the ingested buffered channel prices.
-			// This is only an info so that there aren't noisy errors when undesirable but
-			// expected behavior occurs.
-			logger.Info(
-				"Failed to update exchange price in price daemon priceEncoder due to exchange-side error",
-				"error",
-				response.Err,
-				"exchangeId",
-				exchangeId,
-			)
-
-			// Measure 5xx failures.
-			telemetry.IncrCounterWithLabels(
-				[]string{
-					metrics.PricefeedDaemon,
-					metrics.PriceEncoderUpdatePrice,
-					metrics.HttpGet5xxx,
-					metrics.Error,
-				},
-				1,
-				[]gometrics.Label{
-					pricefeedmetrics.GetLabelForExchangeId(exchangeId),
-				},
-			)
-		} else if errors.Is(response.Err, syscall.ECONNRESET) {
-			// Log info if there are connections reset by the exchange.
-			// This is only an info so that there aren't noisy errors when undesirable but
-			// expected behavior occurs.
-			logger.Info(
-				"Failed to update exchange price in price daemon priceEncoder due to exchange-side hang-up",
-				"error",
-				response.Err,
-				"exchangeId",
-				exchangeId,
-			)
-
-			// Measure HTTP GET hangups.
-			telemetry.IncrCounterWithLabels(
-				[]string{
-					metrics.PricefeedDaemon,
-					metrics.PriceEncoderUpdatePrice,
-					metrics.HttpGetHangup,
-					metrics.Error,
-				},
-				1,
-				[]gometrics.Label{
-					pricefeedmetrics.GetLabelForExchangeId(exchangeId),
-				},
-			)
-		} else {
-			// Log error if there are errors in the ingested buffered channel prices.
-			logger.Error(
-				"Failed to update exchange price in price daemon priceEncoder",
-				"error",
-				response.Err,
-				"exchangeId",
-				exchangeId,
-			)
-
-			// Measure all failures in querying other than timeout.
-			telemetry.IncrCounterWithLabels(
-				[]string{
-					metrics.PricefeedDaemon,
-					metrics.PriceEncoderUpdatePrice,
-					metrics.Error,
-				},
-				1,
-				[]gometrics.Label{
-					pricefeedmetrics.GetLabelForExchangeId(exchangeId),
-				},
-			)
-		}
+		priceEncoder.ProcessPriceFetcherResponse(response)
 	}
 }
 
@@ -290,9 +188,9 @@ func (s *SubTaskRunnerImpl) StartPriceFetcher(
 	// each other defined during normal daemon operation. Instead, the price fetcher is
 	// initialized with the configs object after the price fetcher is created, and then adds
 	// itself to the config's list of exchange config updaters here.
-	configs.AddExchangeConfigUpdater(priceFetcher)
+	configs.AddPriceFetcher(priceFetcher)
 
-	requestHandler := lib.NewRequestHandlerImpl(
+	requestHandler := daemontypes.NewRequestHandlerImpl(
 		&HttpClient,
 	)
 	// Begin loop to periodically start goroutines to query market prices.
@@ -322,11 +220,20 @@ func (s *SubTaskRunnerImpl) StartMarketParamUpdater(
 	pricesQueryClient pricetypes.QueryClient,
 	logger log.Logger,
 ) {
+	// Delay reporting certain errors for a grace period to allow the daemon to start up. There is a bit of a race
+	// condition here with reading/writing the variable, but it's not a big deal if there is some jitter in the
+	// timing of the grace period ending.
+	isPastGracePeriod := false
+	go func() {
+		time.Sleep(constants.PriceDaemonStartupErrorGracePeriod)
+		isPastGracePeriod = true
+	}()
+
 	// Periodically update market parameters.
 	for {
 		select {
 		case <-ticker.C:
-			RunMarketParamUpdaterTaskLoop(ctx, configs, pricesQueryClient, logger)
+			RunMarketParamUpdaterTaskLoop(ctx, configs, pricesQueryClient, logger, isPastGracePeriod)
 
 		case <-stop:
 			return
@@ -341,10 +248,11 @@ func (s *SubTaskRunnerImpl) StartMarketParamUpdater(
 // where the pricefeed server is listening.
 func RunPriceUpdaterTaskLoop(
 	ctx context.Context,
-	exchangeToMarketPrices *types.ExchangeToMarketPrices,
+	exchangeToMarketPrices types.ExchangeToMarketPrices,
 	priceFeedServiceClient api.PriceFeedServiceClient,
 	logger log.Logger,
 ) error {
+	logger = logger.With(constants.SubmoduleLogKey, constants.PriceUpdaterSubmoduleName)
 	priceUpdates := exchangeToMarketPrices.GetAllPrices()
 	request := transformPriceUpdates(priceUpdates)
 
@@ -376,9 +284,7 @@ func RunPriceUpdaterTaskLoop(
 	} else {
 		// This is expected to happen on startup until prices have been encoded into the in-memory
 		// `exchangeToMarketPrices` map. After that point, there should be no price updates of length 0.
-		logger.Info(
-			"Price update had length of 0",
-		)
+		logger.Info("Price update had length of 0")
 		telemetry.IncrCounter(
 			1,
 			metrics.PricefeedDaemon,
@@ -397,6 +303,7 @@ func RunMarketParamUpdaterTaskLoop(
 	configs types.PricefeedMutableMarketConfigs,
 	pricesQueryClient pricetypes.QueryClient,
 	logger log.Logger,
+	isPastGracePeriod bool,
 ) {
 	// Measure latency to fetch and parse the market params, and propagate all updates.
 	defer telemetry.ModuleMeasureSince(
@@ -405,10 +312,23 @@ func RunMarketParamUpdaterTaskLoop(
 		metrics.MarketUpdaterUpdateMarkets,
 		metrics.Latency,
 	)
+
+	logger = logger.With(constants.SubmoduleLogKey, constants.MarketParamUpdaterSubmoduleName)
+
 	// Query all market params from the query client.
 	getAllMarketsResponse, err := pricesQueryClient.AllMarketParams(ctx, &pricetypes.QueryAllMarketParamsRequest{})
 	if err != nil {
-		logger.Error("Failed to get all market params", "error", err)
+		var logMethod = logger.Info
+		if isPastGracePeriod {
+			// When the daemon starts, there is normally a delay between when the prices daemon starts and the prices
+			// query service becomes available. This is not a true error condition, so we log it as info instead of
+			// error in order to avoid spurious error logs and alerts.
+			logMethod = logger.Error
+		}
+		logMethod("Failed to get all market params",
+			"error",
+			err,
+		)
 		// Measure all failures to retrieve market params from the query client.
 		telemetry.IncrCounter(
 			1,
@@ -420,22 +340,37 @@ func RunMarketParamUpdaterTaskLoop(
 	}
 
 	// Update shared, in-memory config with the latest market params. Report update success/failure via logging/metrics.
-	err = configs.UpdateMarkets(getAllMarketsResponse.MarketParams)
-	if err == nil {
-		telemetry.IncrCounter(
+	marketParamErrors, err := configs.UpdateMarkets(getAllMarketsResponse.MarketParams)
+
+	for _, marketParam := range getAllMarketsResponse.MarketParams {
+		outcome := metrics.Success
+
+		// Mark this update as an error either if this market failed to update, or if all markets failed.
+		if _, ok := marketParamErrors[marketParam.Id]; ok || err != nil {
+			outcome = metrics.Error
+		}
+
+		telemetry.IncrCounterWithLabels(
+			[]string{metrics.PricefeedDaemon, metrics.MarketUpdaterApplyMarketUpdates, outcome},
 			1,
-			metrics.PricefeedDaemon,
-			metrics.MarketUpdaterApplyMarketUpdates,
-			metrics.Success,
+			[]gometrics.Label{
+				pricefeedmetrics.GetLabelForMarketId(marketParam.Id),
+			},
 		)
-	} else {
-		logger.Error("Failed to apply market updates", "error", err)
-		// Measure all failures to update market params.
-		telemetry.IncrCounter(
-			1,
-			metrics.PricefeedDaemon,
-			metrics.MarketUpdaterApplyMarketUpdates,
-			metrics.Error,
+	}
+	if err != nil {
+		logger.Error(
+			"Failed to apply all market updates",
+			"error",
+			err,
+			"marketParamErrors",
+			marketParamErrors,
+		)
+	} else if len(marketParamErrors) > 0 {
+		logger.Error(
+			"Failed to apply some market updates",
+			"marketParamErrors",
+			marketParamErrors,
 		)
 	}
 }

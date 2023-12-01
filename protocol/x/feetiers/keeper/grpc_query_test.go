@@ -7,8 +7,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	testapp "github.com/dydxprotocol/v4/testutil/app"
-	"github.com/dydxprotocol/v4/x/feetiers/types"
+	testapp "github.com/dydxprotocol/v4-chain/protocol/testutil/app"
+	"github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types"
 )
 
 func TestParams(t *testing.T) {
@@ -67,8 +67,8 @@ func TestUserFeeTier(t *testing.T) {
 					AbsoluteVolumeRequirement:      0,
 					TotalVolumeShareRequirementPpm: 0,
 					MakerVolumeShareRequirementPpm: 0,
-					MakerFeePpm:                    0,
-					TakerFeePpm:                    0,
+					MakerFeePpm:                    -110,
+					TakerFeePpm:                    500,
 				},
 			},
 			err: nil,

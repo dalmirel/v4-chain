@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	pricetypes "github.com/dydxprotocol/v4/x/prices/types"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	pricetypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -15,14 +16,15 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx"
-	"github.com/dydxprotocol/v4/mocks"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/keeper"
-	epochs_keeper "github.com/dydxprotocol/v4/x/epochs/keeper"
-	epoch_types "github.com/dydxprotocol/v4/x/epochs/types"
-	"github.com/dydxprotocol/v4/x/perpetuals"
-	perpetuals_keeper "github.com/dydxprotocol/v4/x/perpetuals/keeper"
-	prices_keeper "github.com/dydxprotocol/v4/x/prices/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	testutil_json "github.com/dydxprotocol/v4-chain/protocol/testutil/json"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	epochs_keeper "github.com/dydxprotocol/v4-chain/protocol/x/epochs/keeper"
+	epoch_types "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals"
+	perpetuals_keeper "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/keeper"
+	prices_keeper "github.com/dydxprotocol/v4-chain/protocol/x/prices/keeper"
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/stretchr/testify/mock"
@@ -47,14 +49,14 @@ func createAppModuleWithKeeper(t *testing.T) (
 	interfaceRegistry := types.NewInterfaceRegistry()
 	appCodec := codec.NewProtoCodec(interfaceRegistry)
 
-	ctx, keeper, pricesKeeper, epochsKeeper, _ := keeper.PerpetualsKeepers(t)
+	pc := keeper.PerpetualsKeepers(t)
 
 	return perpetuals.NewAppModule(
 		appCodec,
-		*keeper,
+		pc.PerpetualsKeeper,
 		nil,
 		nil,
-	), keeper, pricesKeeper, epochsKeeper, ctx
+	), pc.PerpetualsKeeper, pc.PricesKeeper, pc.EpochsKeeper, pc.Ctx
 }
 
 func createAppModuleBasic(t *testing.T) perpetuals.AppModuleBasic {
@@ -82,8 +84,6 @@ func TestAppModuleBasic_RegisterCodec(t *testing.T) {
 	var buf bytes.Buffer
 	err := cdc.Amino.PrintTypes(&buf)
 	require.NoError(t, err)
-	require.Contains(t, buf.String(), "MsgAddPremiumVotes")
-	require.Contains(t, buf.String(), "perpetuals/FundingSamples")
 }
 
 func TestAppModuleBasic_RegisterCodecLegacyAmino(t *testing.T) {
@@ -95,8 +95,6 @@ func TestAppModuleBasic_RegisterCodecLegacyAmino(t *testing.T) {
 	var buf bytes.Buffer
 	err := cdc.Amino.PrintTypes(&buf)
 	require.NoError(t, err)
-	require.Contains(t, buf.String(), "MsgAddPremiumVotes")
-	require.Contains(t, buf.String(), "perpetuals/FundingSamples")
 }
 
 func TestAppModuleBasic_RegisterInterfaces(t *testing.T) {
@@ -106,7 +104,7 @@ func TestAppModuleBasic_RegisterInterfaces(t *testing.T) {
 	mockRegistry.On("RegisterImplementations", (*sdk.Msg)(nil), mock.Anything).Return()
 	mockRegistry.On("RegisterImplementations", (*tx.MsgResponse)(nil), mock.Anything).Return()
 	am.RegisterInterfaces(mockRegistry)
-	mockRegistry.AssertNumberOfCalls(t, "RegisterImplementations", 3)
+	mockRegistry.AssertNumberOfCalls(t, "RegisterImplementations", 10)
 	mockRegistry.AssertExpectations(t)
 }
 
@@ -145,9 +143,20 @@ func TestAppModuleBasic_ValidateGenesisErrBadState(t *testing.T) {
 	interfaceRegistry := types.NewInterfaceRegistry()
 	cdc := codec.NewProtoCodec(interfaceRegistry)
 
-	h := json.RawMessage(`{"perpetuals": [{ "ticker": "" }],
-			"params": { "funding_rate_clamp_factor_ppm": 6000000,
-			"premium_vote_clamp_factor_ppm": 60000000, "min_num_votes_per_sample":15 }}`)
+	h := json.RawMessage(`{
+		"perpetuals":[
+		   {
+			  "params":{
+				"ticker":""
+			  }
+		   }
+		],
+		"params":{
+		   "funding_rate_clamp_factor_ppm":6000000,
+		   "premium_vote_clamp_factor_ppm":60000000,
+		   "min_num_votes_per_sample":15
+		}
+	 }`)
 
 	err := am.ValidateGenesis(cdc, nil, h)
 	require.EqualError(t, err, "Ticker must be non-empty string")
@@ -159,9 +168,21 @@ func TestAppModuleBasic_ValidateGenesis(t *testing.T) {
 	interfaceRegistry := types.NewInterfaceRegistry()
 	cdc := codec.NewProtoCodec(interfaceRegistry)
 
-	h := json.RawMessage(`{"perpetuals": [{ "ticker": "EXAM-USD", "market_id": 0 }],
-			"params": { "funding_rate_clamp_factor_ppm": 6000000,
-			"premium_vote_clamp_factor_ppm": 60000000, "min_num_votes_per_sample":15 }}`)
+	h := json.RawMessage(`{
+		"perpetuals":[
+		   {
+			   "params":{
+				    "ticker":"EXAM-USD",
+				    "market_id":0
+			  }
+		   }
+		],
+		"params":{
+		   "funding_rate_clamp_factor_ppm":6000000,
+		   "premium_vote_clamp_factor_ppm":60000000,
+		   "min_num_votes_per_sample":15
+		}
+	 }`)
 
 	err := am.ValidateGenesis(cdc, nil, h)
 	require.NoError(t, err)
@@ -223,9 +244,12 @@ func TestAppModuleBasic_GetQueryCmd(t *testing.T) {
 
 	cmd := am.GetQueryCmd()
 	require.Equal(t, "perpetuals", cmd.Use)
-	require.Equal(t, 2, len(cmd.Commands()))
-	require.Equal(t, "list-perpetual", cmd.Commands()[0].Name())
-	require.Equal(t, "show-perpetual", cmd.Commands()[1].Name())
+	require.Equal(t, 5, len(cmd.Commands()))
+	require.Equal(t, "get-params", cmd.Commands()[0].Name())
+	require.Equal(t, "get-premium-samples", cmd.Commands()[1].Name())
+	require.Equal(t, "get-premium-votes", cmd.Commands()[2].Name())
+	require.Equal(t, "list-perpetual", cmd.Commands()[3].Name())
+	require.Equal(t, "show-perpetual", cmd.Commands()[4].Name())
 }
 
 func TestAppModule_Name(t *testing.T) {
@@ -265,11 +289,12 @@ func TestAppModule_InitExportGenesis(t *testing.T) {
 	if _, err := pricesKeeper.CreateMarket(
 		ctx,
 		pricetypes.MarketParam{
-			Id:                0,
-			Pair:              constants.EthUsdPair,
-			Exponent:          -2,
-			MinExchanges:      1,
-			MinPriceChangePpm: 1_000,
+			Id:                 0,
+			Pair:               constants.EthUsdPair,
+			Exponent:           -2,
+			MinExchanges:       1,
+			MinPriceChangePpm:  1_000,
+			ExchangeConfigJson: "{}",
 		},
 		pricetypes.MarketPrice{
 			Id:       0,
@@ -280,11 +305,31 @@ func TestAppModule_InitExportGenesis(t *testing.T) {
 		t.Errorf("failed to create a market %s", err)
 	}
 
-	msg := `{"perpetuals": [{ "ticker": "EXAM-USD", "market_id": 0, "liquidity_tier": 0 }],
-			"liquidity_tiers": [{ "name": "Large-Cap", "initial_margin_ppm": 50000,
-			"maintenance_fraction_ppm": 500000, "base_position_notional": 1000000000, "impact_notional": 10000000000 }],
-			"params": { "funding_rate_clamp_factor_ppm": 6000000, "premium_vote_clamp_factor_ppm": 60000000,
-			"min_num_votes_per_sample": 15 }}`
+	msg := `{
+		"perpetuals":[
+		   {
+			  "params": {
+				 "ticker":"EXAM-USD",
+				 "market_id":0,
+				 "liquidity_tier":0
+			  }
+		   }
+		],
+		"liquidity_tiers":[
+		   {
+			  "name":"Large-Cap",
+			  "initial_margin_ppm":50000,
+			  "maintenance_fraction_ppm":500000,
+			  "base_position_notional":1000000000,
+			  "impact_notional":10000000000
+		   }
+		],
+		"params":{
+		   "funding_rate_clamp_factor_ppm":6000000,
+		   "premium_vote_clamp_factor_ppm":60000000,
+		   "min_num_votes_per_sample":15
+		}
+	}`
 	gs := json.RawMessage(msg)
 
 	result := am.InitGenesis(ctx, cdc, gs)
@@ -293,17 +338,44 @@ func TestAppModule_InitExportGenesis(t *testing.T) {
 	perpetuals := keeper.GetAllPerpetuals(ctx)
 	require.Equal(t, 1, len(perpetuals))
 
-	require.Equal(t, "EXAM-USD", perpetuals[0].Ticker)
-	require.Equal(t, uint32(0), perpetuals[0].Id)
+	require.Equal(t, "EXAM-USD", perpetuals[0].Params.Ticker)
+	require.Equal(t, uint32(0), perpetuals[0].Params.Id)
 
 	genesisJson := am.ExportGenesis(ctx, cdc)
-	expected := `{"perpetuals":[{"id":0,"ticker":"EXAM-USD","market_id":0,"atomic_resolution":0,`
-	expected += `"default_funding_ppm":0,"liquidity_tier":0,"funding_index":"0","open_interest":"0"}],`
-	expected += `"liquidity_tiers":[{"id":0,"name":"Large-Cap","initial_margin_ppm":50000,`
-	expected += `"maintenance_fraction_ppm":500000,"base_position_notional":"1000000000",`
-	expected += `"impact_notional":"10000000000"}],"params":{"funding_rate_clamp_factor_ppm":6000000,`
-	expected += `"premium_vote_clamp_factor_ppm":60000000,"min_num_votes_per_sample":15}}`
-	require.Equal(t, expected, string(genesisJson))
+	expected := `{
+		"perpetuals":[
+		   {
+			  "params":{
+				 "id":0,
+				 "ticker":"EXAM-USD",
+				 "market_id":0,
+				 "atomic_resolution":0,
+				 "default_funding_ppm":0,
+				 "liquidity_tier":0
+			  },
+			  "funding_index":"0"
+		   }
+		],
+		"liquidity_tiers":[
+		   {
+			  "id":0,
+			  "name":"Large-Cap",
+			  "initial_margin_ppm":50000,
+			  "maintenance_fraction_ppm":500000,
+			  "base_position_notional":"1000000000",
+			  "impact_notional":"10000000000"
+		   }
+		],
+		"params":{
+		   "funding_rate_clamp_factor_ppm":6000000,
+		   "premium_vote_clamp_factor_ppm":60000000,
+		   "min_num_votes_per_sample":15
+		}
+	 }`
+	require.Equal(t,
+		testutil_json.CompactJsonString(t, expected),
+		testutil_json.CompactJsonString(t, string(genesisJson)),
+	)
 }
 
 func TestAppModule_InitGenesisPanic(t *testing.T) {

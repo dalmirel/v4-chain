@@ -5,12 +5,14 @@ package mocks
 import (
 	big "math/big"
 
-	indexer_manager "github.com/dydxprotocol/v4/indexer/indexer_manager"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
+	indexer_manager "github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+
+	log "github.com/cometbft/cometbft/libs/log"
 
 	mock "github.com/stretchr/testify/mock"
 
-	subaccountstypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	subaccountstypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 
 	time "time"
 
@@ -45,6 +47,27 @@ func (_m *MemClobKeeper) AddOrderToOrderbookCollatCheck(ctx types.Context, clobP
 	return r0, r1
 }
 
+// CanDeleverageSubaccount provides a mock function with given fields: ctx, subaccountId
+func (_m *MemClobKeeper) CanDeleverageSubaccount(ctx types.Context, subaccountId subaccountstypes.SubaccountId) (bool, error) {
+	ret := _m.Called(ctx, subaccountId)
+
+	var r0 bool
+	if rf, ok := ret.Get(0).(func(types.Context, subaccountstypes.SubaccountId) bool); ok {
+		r0 = rf(ctx, subaccountId)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(types.Context, subaccountstypes.SubaccountId) error); ok {
+		r1 = rf(ctx, subaccountId)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // CancelShortTermOrder provides a mock function with given fields: ctx, msgCancelOrder
 func (_m *MemClobKeeper) CancelShortTermOrder(ctx types.Context, msgCancelOrder *clobtypes.MsgCancelOrder) error {
 	ret := _m.Called(ctx, msgCancelOrder)
@@ -54,20 +77,6 @@ func (_m *MemClobKeeper) CancelShortTermOrder(ctx types.Context, msgCancelOrder 
 		r0 = rf(ctx, msgCancelOrder)
 	} else {
 		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// DoesLongTermOrderExistInState provides a mock function with given fields: ctx, order
-func (_m *MemClobKeeper) DoesLongTermOrderExistInState(ctx types.Context, order clobtypes.Order) bool {
-	ret := _m.Called(ctx, order)
-
-	var r0 bool
-	if rf, ok := ret.Get(0).(func(types.Context, clobtypes.Order) bool); ok {
-		r0 = rf(ctx, order)
-	} else {
-		r0 = ret.Get(0).(bool)
 	}
 
 	return r0
@@ -173,6 +182,22 @@ func (_m *MemClobKeeper) IsLiquidatable(ctx types.Context, subaccountId subaccou
 	}
 
 	return r0, r1
+}
+
+// Logger provides a mock function with given fields: ctx
+func (_m *MemClobKeeper) Logger(ctx types.Context) log.Logger {
+	ret := _m.Called(ctx)
+
+	var r0 log.Logger
+	if rf, ok := ret.Get(0).(func(types.Context) log.Logger); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(log.Logger)
+		}
+	}
+
+	return r0
 }
 
 // MustAddOrderToStatefulOrdersTimeSlice provides a mock function with given fields: ctx, goodTilBlockTime, orderId
@@ -289,6 +314,20 @@ func (_m *MemClobKeeper) ReplayPlaceOrder(ctx types.Context, msg *clobtypes.MsgP
 // SetLongTermOrderPlacement provides a mock function with given fields: ctx, order, blockHeight
 func (_m *MemClobKeeper) SetLongTermOrderPlacement(ctx types.Context, order clobtypes.Order, blockHeight uint32) {
 	_m.Called(ctx, order, blockHeight)
+}
+
+// ValidateSubaccountEquityTierLimitForNewOrder provides a mock function with given fields: ctx, order
+func (_m *MemClobKeeper) ValidateSubaccountEquityTierLimitForNewOrder(ctx types.Context, order clobtypes.Order) error {
+	ret := _m.Called(ctx, order)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(types.Context, clobtypes.Order) error); ok {
+		r0 = rf(ctx, order)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
 }
 
 type mockConstructorTestingTNewMemClobKeeper interface {

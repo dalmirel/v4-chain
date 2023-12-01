@@ -6,12 +6,12 @@ import (
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/errors"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
-	"github.com/dydxprotocol/v4/mocks"
-	testante "github.com/dydxprotocol/v4/testutil/ante"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/x/clob/ante"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	testante "github.com/dydxprotocol/v4-chain/protocol/testutil/ante"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/ante"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -68,31 +68,31 @@ func TestValidateMsgType_NewSingleMsgClobTx(t *testing.T) {
 			msgOne: constants.Msg_CancelOrder,
 			msgTwo: constants.Msg_Transfer,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, two MsgCancelOrder": {
 			msgOne: constants.Msg_CancelOrder,
 			msgTwo: constants.Msg_CancelOrder,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, MsgPlaceOrder with Transfer": {
 			msgOne: constants.Msg_PlaceOrder,
 			msgTwo: constants.Msg_Transfer,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, two MsgPlaceOrder": {
 			msgOne: constants.Msg_PlaceOrder,
 			msgTwo: constants.Msg_PlaceOrder,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, MsgCancelOrder and MsgPlaceOrder": {
 			msgOne: constants.Msg_CancelOrder,
 			msgTwo: constants.Msg_PlaceOrder,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 	}
 
@@ -203,31 +203,31 @@ func TestValidateMsgType_NewShortTermSingleMsgClobTx(t *testing.T) {
 			msgOne: constants.Msg_CancelOrder,
 			msgTwo: constants.Msg_Transfer,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, two MsgCancelOrder": {
 			msgOne: constants.Msg_CancelOrder,
 			msgTwo: constants.Msg_CancelOrder,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, MsgPlaceOrder with Transfer": {
 			msgOne: constants.Msg_PlaceOrder,
 			msgTwo: constants.Msg_Transfer,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, two MsgPlaceOrder": {
 			msgOne: constants.Msg_PlaceOrder,
 			msgTwo: constants.Msg_PlaceOrder,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 		"no skip: mult msgs, MsgCancelOrder and MsgPlaceOrder": {
 			msgOne: constants.Msg_CancelOrder,
 			msgTwo: constants.Msg_PlaceOrder,
 
-			expectedErr: errors.ErrInvalidRequest,
+			expectedErr: sdkerrors.ErrInvalidRequest,
 		},
 	}
 

@@ -3,8 +3,8 @@ package types
 import (
 	"testing"
 
-	"github.com/dydxprotocol/v4/testutil/sample"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/sample"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -161,7 +161,7 @@ func TestMsgPlaceOrder_ValidateBasic(t *testing.T) {
 					TimeInForce: Order_TIME_IN_FORCE_IOC,
 				},
 			},
-			err: ErrStatefulOrdersCannotRequireImmediateExecution,
+			err: ErrLongTermOrdersCannotRequireImmediateExecution,
 		},
 		"long-term: cannot be FOK": {
 			msg: MsgPlaceOrder{
@@ -181,7 +181,7 @@ func TestMsgPlaceOrder_ValidateBasic(t *testing.T) {
 					TimeInForce: Order_TIME_IN_FORCE_FILL_OR_KILL,
 				},
 			},
-			err: ErrStatefulOrdersCannotRequireImmediateExecution,
+			err: ErrLongTermOrdersCannotRequireImmediateExecution,
 		},
 		"zero subticks": {
 			msg: MsgPlaceOrder{
@@ -251,6 +251,110 @@ func TestMsgPlaceOrder_ValidateBasic(t *testing.T) {
 				},
 			},
 			err: ErrReduceOnlyDisabled,
+		},
+		"conditional: valid": {
+			msg: MsgPlaceOrder{
+				Order: Order{
+					OrderId: OrderId{
+						SubaccountId: satypes.SubaccountId{
+							Owner:  sample.AccAddress(),
+							Number: uint32(0),
+						},
+						OrderFlags: OrderIdFlags_Conditional,
+					},
+					Side:     Order_SIDE_BUY,
+					Subticks: uint64(10),
+					Quantums: uint64(42),
+					GoodTilOneof: &Order_GoodTilBlockTime{
+						GoodTilBlockTime: uint32(100),
+					},
+					ConditionType:                   Order_CONDITION_TYPE_TAKE_PROFIT,
+					ConditionalOrderTriggerSubticks: uint64(10),
+				},
+			},
+		},
+		"conditional: unspecified condition type": {
+			msg: MsgPlaceOrder{
+				Order: Order{
+					OrderId: OrderId{
+						SubaccountId: satypes.SubaccountId{
+							Owner:  sample.AccAddress(),
+							Number: uint32(0),
+						},
+						OrderFlags: OrderIdFlags_Conditional,
+					},
+					Side:     Order_SIDE_BUY,
+					Subticks: uint64(10),
+					Quantums: uint64(42),
+					GoodTilOneof: &Order_GoodTilBlockTime{
+						GoodTilBlockTime: uint32(100),
+					},
+				},
+			},
+			err: ErrInvalidConditionType,
+		},
+		"conditional: zero ConditionalOrderTriggerSubticks": {
+			msg: MsgPlaceOrder{
+				Order: Order{
+					OrderId: OrderId{
+						SubaccountId: satypes.SubaccountId{
+							Owner:  sample.AccAddress(),
+							Number: uint32(0),
+						},
+						OrderFlags: OrderIdFlags_Conditional,
+					},
+					Side:     Order_SIDE_BUY,
+					Subticks: uint64(10),
+					Quantums: uint64(42),
+					GoodTilOneof: &Order_GoodTilBlockTime{
+						GoodTilBlockTime: uint32(100),
+					},
+					ConditionType: Order_CONDITION_TYPE_TAKE_PROFIT,
+				},
+			},
+			err: ErrInvalidConditionalOrderTriggerSubticks,
+		},
+		"non-conditional: specified condition type": {
+			msg: MsgPlaceOrder{
+				Order: Order{
+					OrderId: OrderId{
+						SubaccountId: satypes.SubaccountId{
+							Owner:  sample.AccAddress(),
+							Number: uint32(0),
+						},
+						OrderFlags: OrderIdFlags_LongTerm,
+					},
+					Side:     Order_SIDE_BUY,
+					Subticks: uint64(10),
+					Quantums: uint64(42),
+					GoodTilOneof: &Order_GoodTilBlockTime{
+						GoodTilBlockTime: uint32(100),
+					},
+					ConditionType: Order_CONDITION_TYPE_TAKE_PROFIT,
+				},
+			},
+			err: ErrInvalidConditionType,
+		},
+		"non-conditional: greater than zero ConditionalOrderTriggerSubticks": {
+			msg: MsgPlaceOrder{
+				Order: Order{
+					OrderId: OrderId{
+						SubaccountId: satypes.SubaccountId{
+							Owner:  sample.AccAddress(),
+							Number: uint32(0),
+						},
+						OrderFlags: OrderIdFlags_LongTerm,
+					},
+					Side:     Order_SIDE_BUY,
+					Subticks: uint64(10),
+					Quantums: uint64(42),
+					GoodTilOneof: &Order_GoodTilBlockTime{
+						GoodTilBlockTime: uint32(100),
+					},
+					ConditionalOrderTriggerSubticks: uint64(10),
+				},
+			},
+			err: ErrInvalidConditionalOrderTriggerSubticks,
 		},
 	}
 	for name, tc := range tests {

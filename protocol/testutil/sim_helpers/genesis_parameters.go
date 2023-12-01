@@ -3,8 +3,7 @@ package sim_helpers
 import (
 	"math"
 
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	perptypes "github.com/dydxprotocol/v4/x/perpetuals/types"
+	perptypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
 )
 
 // All generated genesis parameters should be defined here.
@@ -23,15 +22,6 @@ var (
 		Valid:      25,
 	}
 
-	MinFeePpm = GenesisParameters[int]{
-		Reasonable: 0,
-		Valid:      0,
-	}
-	MaxFeePpm = GenesisParameters[int]{
-		Reasonable: 1000, // 0.1%
-		Valid:      clobtypes.MaxFeePpm,
-	}
-
 	MinStepBaseQuantums = GenesisParameters[int]{
 		Reasonable: 10,
 		Valid:      1,
@@ -41,10 +31,6 @@ var (
 		Valid:      math.MaxUint32,
 	}
 
-	MinOrderBaseQuantums = GenesisParameters[int]{
-		Reasonable: 10,
-		Valid:      1,
-	}
 	MaxOrderBaseQuantums = GenesisParameters[int]{
 		Reasonable: 10_000_000,
 		Valid:      math.MaxUint32,
@@ -59,12 +45,6 @@ var (
 		Valid:      math.MaxUint32,
 	}
 
-	MaxInsuranceFundQuantumsForDeleveragingBuckets = []int{
-		0, // min
-		1_000_000,
-		100_000_000,
-		1_000_000_000_000, // $1,000,000
-	}
 	MinPositionNotionalBuckets = []int{
 		1, // min
 		1_000_000,

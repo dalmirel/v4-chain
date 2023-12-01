@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/dydxprotocol/v4-chain/protocol/app/stoppable"
+
 	tmcli "github.com/cometbft/cometbft/libs/cli"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	clitestutil "github.com/cosmos/cosmos-sdk/testutil/cli"
@@ -14,14 +16,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/network"
-	"github.com/dydxprotocol/v4/testutil/nullify"
-	"github.com/dydxprotocol/v4/x/clob/client/cli"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	perpetualstypes "github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/network"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/nullify"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/client/cli"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	perpetualstypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 // Prevent strconv unused error
@@ -38,7 +41,22 @@ func networkWithClobPairObjects(t *testing.T, n int) (*network.Network, []types.
 	cfg.GenesisState[pricestypes.ModuleName] = pricesBuf
 
 	// Init Perpetuals genesis state.
+	// Add additional perps for objects exceeding the default perpetual count.
+	// ClobPairs and Perpetuals should be one to one.
 	perpetualsState := constants.Perpetuals_DefaultGenesisState
+	for i := 2; i < n; i++ {
+		perpetualsState.Perpetuals = append(
+			perpetualsState.Perpetuals,
+			perpetualstypes.Perpetual{
+				Params: perpetualstypes.PerpetualParams{
+					Id:            uint32(i),
+					Ticker:        fmt.Sprintf("genesis_test_ticker_%d", i),
+					LiquidityTier: 0,
+				},
+				FundingIndex: dtypes.ZeroInt(),
+			},
+		)
+	}
 	perpetualsBuf, perpetualsErr := cfg.Codec.MarshalJSON(&perpetualsState)
 	require.NoError(t, perpetualsErr)
 	cfg.GenesisState[perpetualstypes.ModuleName] = perpetualsBuf
@@ -51,12 +69,11 @@ func networkWithClobPairObjects(t *testing.T, n int) (*network.Network, []types.
 		clobPair := types.ClobPair{
 			Id: uint32(i),
 			Metadata: &types.ClobPair_PerpetualClobMetadata{
-				PerpetualClobMetadata: &types.PerpetualClobMetadata{PerpetualId: 0},
+				PerpetualClobMetadata: &types.PerpetualClobMetadata{PerpetualId: uint32(i)},
 			},
-			SubticksPerTick:      5,
-			StepBaseQuantums:     5,
-			MinOrderBaseQuantums: 10,
-			Status:               types.ClobPair_STATUS_ACTIVE,
+			SubticksPerTick:  5,
+			StepBaseQuantums: 5,
+			Status:           types.ClobPair_STATUS_ACTIVE,
 		}
 		nullify.Fill(&clobPair) //nolint:staticcheck
 		state.ClobPairs = append(state.ClobPairs, clobPair)
@@ -64,6 +81,10 @@ func networkWithClobPairObjects(t *testing.T, n int) (*network.Network, []types.
 	buf, err := cfg.Codec.MarshalJSON(&state)
 	require.NoError(t, err)
 	cfg.GenesisState[types.ModuleName] = buf
+
+	t.Cleanup(func() {
+		stoppable.StopServices(t, cfg.GRPCAddress)
+	})
 
 	return network.New(t, cfg), state.ClobPairs
 }
@@ -101,7 +122,7 @@ func TestShowClobPair(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			args := []string{
-				lib.Uint32ToString(tc.id),
+				lib.UintToString(tc.id),
 			}
 			args = append(args, tc.args...)
 			out, err := clitestutil.ExecTestCLICmd(ctx, cli.CmdShowClobPair(), args)

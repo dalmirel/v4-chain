@@ -2,12 +2,14 @@ package keeper
 
 import (
 	"fmt"
+
+	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	indexerevents "github.com/dydxprotocol/v4/indexer/events"
-	"github.com/dydxprotocol/v4/indexer/indexer_manager"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/metrics"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 // CreateMarket creates a new market param in the store along with a new market price
@@ -19,6 +21,14 @@ func (k Keeper) CreateMarket(
 	marketParam types.MarketParam,
 	marketPrice types.MarketPrice,
 ) (types.MarketParam, error) {
+	if _, exists := k.GetMarketParam(ctx, marketParam.Id); exists {
+		return types.MarketParam{}, errorsmod.Wrapf(
+			types.ErrMarketParamAlreadyExists,
+			"market param with id %d already exists",
+			marketParam.Id,
+		)
+	}
+
 	// Validate input.
 	if err := marketParam.Validate(); err != nil {
 		return types.MarketParam{}, err
@@ -27,33 +37,21 @@ func (k Keeper) CreateMarket(
 		return types.MarketParam{}, err
 	}
 
-	// Validate param uses the `nextId`.
-	nextId := k.GetNumMarkets(ctx)
-	if marketParam.Id != nextId {
-		return types.MarketParam{}, sdkerrors.Wrapf(
-			types.ErrInvalidInput,
-			"expected market param with id %d, got %d",
-			nextId,
-			marketParam.Id,
-		)
-	}
-
 	paramBytes := k.cdc.MustMarshal(&marketParam)
 	priceBytes := k.cdc.MustMarshal(&marketPrice)
 
-	marketParamStore := k.newMarketParamStore(ctx)
-	marketParamStore.Set(types.MarketKey(marketParam.Id), paramBytes)
+	marketParamStore := k.getMarketParamStore(ctx)
+	marketParamStore.Set(lib.Uint32ToKey(marketParam.Id), paramBytes)
 
-	marketPriceStore := k.newMarketPriceStore(ctx)
-	marketPriceStore.Set(types.MarketKey(marketPrice.Id), priceBytes)
+	marketPriceStore := k.getMarketPriceStore(ctx)
+	marketPriceStore.Set(lib.Uint32ToKey(marketPrice.Id), priceBytes)
 
-	// Store the new `numMarkets`.
-	k.setNumMarkets(ctx, nextId+1)
-
+	// Generate indexer event.
 	k.GetIndexerEventManager().AddTxnEvent(
 		ctx,
 		indexerevents.SubtypeMarket,
-		indexer_manager.GetB64EncodedEventMessage(
+		indexerevents.MarketEventVersion,
+		indexer_manager.GetBytes(
 			indexerevents.NewMarketCreateEvent(
 				marketParam.Id,
 				marketParam.Pair,
@@ -62,7 +60,31 @@ func (k Keeper) CreateMarket(
 			),
 		),
 	)
+
+	k.marketToCreatedAt[marketParam.Id] = k.timeProvider.Now()
+	metrics.SetMarketPairForTelemetry(marketParam.Id, marketParam.Pair)
+
 	return marketParam, nil
+}
+
+// IsRecentlyAvailable returns true if the market was recently made available to the pricefeed daemon. A market is
+// considered recently available either if it was recently created, or if the pricefeed daemon was recently started. If
+// an index price does not exist for a recently available market, the protocol does not consider this an error
+// condition, as it is expected that the pricefeed daemon will eventually provide a price for the market within a
+// few seconds.
+func (k Keeper) IsRecentlyAvailable(ctx sdk.Context, marketId uint32) bool {
+	createdAt, ok := k.marketToCreatedAt[marketId]
+
+	if !ok {
+		return false
+	}
+
+	// The comparison condition considers both market age and price daemon warmup time because a market can be
+	// created before or after the daemon starts. We use block height as a proxy for daemon warmup time because
+	// the price daemon is started when the gRPC service comes up, which typically occurs just before the first
+	// block is processed.
+	return k.timeProvider.Now().Sub(createdAt) < types.MarketIsRecentDuration ||
+		ctx.BlockHeight() < types.PriceDaemonInitializationBlocks
 }
 
 // GetAllMarketParamPrices returns a slice of MarketParam, MarketPrice tuples for all markets.
@@ -71,7 +93,7 @@ func (k Keeper) GetAllMarketParamPrices(ctx sdk.Context) ([]types.MarketParamPri
 	marketPrices := k.GetAllMarketPrices(ctx)
 
 	if len(marketParams) != len(marketPrices) {
-		return nil, sdkerrors.Wrap(types.ErrMarketPricesAndParamsDontMatch, "market param and price lengths do not match")
+		return nil, errorsmod.Wrap(types.ErrMarketPricesAndParamsDontMatch, "market param and price lengths do not match")
 	}
 
 	marketParamPrices := make([]types.MarketParamPrice, len(marketParams))
@@ -79,31 +101,10 @@ func (k Keeper) GetAllMarketParamPrices(ctx sdk.Context) ([]types.MarketParamPri
 		marketParamPrices[i].Param = param
 		price := marketPrices[i]
 		if param.Id != price.Id {
-			return nil, sdkerrors.Wrap(types.ErrMarketPricesAndParamsDontMatch,
+			return nil, errorsmod.Wrap(types.ErrMarketPricesAndParamsDontMatch,
 				fmt.Sprintf("market param and price ids do not match: %d != %d", param.Id, price.Id))
 		}
 		marketParamPrices[i].Price = price
 	}
 	return marketParamPrices, nil
-}
-
-// GetNumMarkets returns the total number of markets.
-func (k Keeper) GetNumMarkets(
-	ctx sdk.Context,
-) uint32 {
-	store := ctx.KVStore(k.storeKey)
-	var numMarketsBytes []byte = store.Get(types.KeyPrefix(types.NumMarketsKey))
-	return lib.BytesToUint32(numMarketsBytes)
-}
-
-// setNumMarkets sets the number of markets with a new value.
-func (k Keeper) setNumMarkets(
-	ctx sdk.Context,
-	newValue uint32,
-) {
-	// Get necessary stores.
-	store := ctx.KVStore(k.storeKey)
-
-	// Set `numMarkets`.
-	store.Set(types.KeyPrefix(types.NumMarketsKey), lib.Uint32ToBytes(newValue))
 }

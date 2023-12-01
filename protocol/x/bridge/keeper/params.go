@@ -2,13 +2,7 @@ package keeper
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/x/bridge/types"
-)
-
-const (
-	eventParamsKey   = "EventParams"
-	proposeParamsKey = "ProposeParams"
-	safetyParamsKey  = "SafetyParams"
+	"github.com/dydxprotocol/v4-chain/protocol/x/bridge/types"
 )
 
 // GetEventParams returns the EventParams in state.
@@ -18,14 +12,14 @@ func (k Keeper) GetEventParams(
 	params types.EventParams,
 ) {
 	store := ctx.KVStore(k.storeKey)
-	b := store.Get([]byte(eventParamsKey))
+	b := store.Get([]byte(types.EventParamsKey))
 	k.cdc.MustUnmarshal(b, &params)
 	return params
 }
 
-// SetEventParams updates the EventParams in state.
+// UpdateEventParams updates the EventParams in state.
 // Returns an error iff validation fails.
-func (k Keeper) SetEventParams(
+func (k Keeper) UpdateEventParams(
 	ctx sdk.Context,
 	params types.EventParams,
 ) error {
@@ -35,7 +29,7 @@ func (k Keeper) SetEventParams(
 
 	store := ctx.KVStore(k.storeKey)
 	b := k.cdc.MustMarshal(&params)
-	store.Set([]byte(eventParamsKey), b)
+	store.Set([]byte(types.EventParamsKey), b)
 
 	return nil
 }
@@ -47,14 +41,14 @@ func (k Keeper) GetProposeParams(
 	params types.ProposeParams,
 ) {
 	store := ctx.KVStore(k.storeKey)
-	b := store.Get([]byte(proposeParamsKey))
+	b := store.Get([]byte(types.ProposeParamsKey))
 	k.cdc.MustUnmarshal(b, &params)
 	return params
 }
 
-// SetProposeParams updates the ProposeParams in state.
+// UpdateProposeParams updates the ProposeParams in state.
 // Returns an error iff validation fails.
-func (k Keeper) SetProposeParams(
+func (k Keeper) UpdateProposeParams(
 	ctx sdk.Context,
 	params types.ProposeParams,
 ) error {
@@ -64,7 +58,7 @@ func (k Keeper) SetProposeParams(
 
 	store := ctx.KVStore(k.storeKey)
 	b := k.cdc.MustMarshal(&params)
-	store.Set([]byte(proposeParamsKey), b)
+	store.Set([]byte(types.ProposeParamsKey), b)
 
 	return nil
 }
@@ -76,14 +70,14 @@ func (k Keeper) GetSafetyParams(
 	params types.SafetyParams,
 ) {
 	store := ctx.KVStore(k.storeKey)
-	b := store.Get([]byte(safetyParamsKey))
+	b := store.Get([]byte(types.SafetyParamsKey))
 	k.cdc.MustUnmarshal(b, &params)
 	return params
 }
 
-// SetSafetyParams updates the SafetyParams in state.
+// UpdateSafetyParams updates the SafetyParams in state.
 // Returns an error iff validation fails.
-func (k Keeper) SetSafetyParams(
+func (k Keeper) UpdateSafetyParams(
 	ctx sdk.Context,
 	params types.SafetyParams,
 ) error {
@@ -93,7 +87,7 @@ func (k Keeper) SetSafetyParams(
 
 	store := ctx.KVStore(k.storeKey)
 	b := k.cdc.MustMarshal(&params)
-	store.Set([]byte(safetyParamsKey), b)
+	store.Set([]byte(types.SafetyParamsKey), b)
 
 	return nil
 }

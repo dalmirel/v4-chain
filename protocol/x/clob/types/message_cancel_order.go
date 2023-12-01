@@ -1,11 +1,13 @@
 package types
 
 import (
+	errorsmod "cosmossdk.io/errors"
 	"fmt"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 )
 
 const TypeMsgCancelOrder = "cancel_order"
@@ -40,15 +42,26 @@ func (msg *MsgCancelOrder) GetSigners() []sdk.AccAddress {
 	return []sdk.AccAddress{creator}
 }
 
-func (msg *MsgCancelOrder) ValidateBasic() error {
+func (msg *MsgCancelOrder) ValidateBasic() (err error) {
 	orderId := msg.GetOrderId()
+
+	defer func() {
+		if err != nil {
+			telemetry.IncrCounterWithLabels(
+				[]string{ModuleName, metrics.CancelOrder, metrics.ValidateBasic, metrics.Error, metrics.Count},
+				1,
+				msg.OrderId.GetOrderIdLabels(),
+			)
+		}
+	}()
+
 	if err := orderId.Validate(); err != nil {
 		return err
 	}
 
 	if orderId.IsStatefulOrder() {
 		if msg.GetGoodTilBlockTime() == 0 {
-			return sdkerrors.Wrapf(
+			return errorsmod.Wrapf(
 				ErrInvalidStatefulOrderGoodTilBlockTime,
 				"stateful cancellation goodTilBlockTime cannot be 0, %+v",
 				orderId,
@@ -56,7 +69,7 @@ func (msg *MsgCancelOrder) ValidateBasic() error {
 		}
 	} else {
 		if msg.GetGoodTilBlock() == 0 {
-			return sdkerrors.Wrapf(
+			return errorsmod.Wrapf(
 				ErrInvalidOrderGoodTilBlock,
 				"cancellation goodTilBlock cannot be 0, orderId %+v",
 				orderId,

@@ -1,40 +1,42 @@
 {
-  "exchanges":[
+  "exchanges": [
     {
-      "exchangeName":"Binance",
-      "ticker":"\"ETHUSDT\""
+      "exchangeName": "Binance",
+      "ticker": "ETHUSDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"BinanceUS",
-      "ticker":"\"ETHUSD\""
+      "exchangeName": "Bybit",
+      "ticker": "ETHUSDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Bitfinex",
-      "ticker":"tETHUSD"
+      "exchangeName": "CoinbasePro",
+      "ticker": "ETH-USD"
     },
     {
-      "exchangeName":"Bitstamp",
-      "ticker":"ETH/USD"
+      "exchangeName": "Huobi",
+      "ticker": "ethusdt",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Bybit",
-      "ticker":"ETHUSDT"
+      "exchangeName": "Kraken",
+      "ticker": "XETHZUSD"
     },
     {
-      "exchangeName":"CoinbasePro",
-      "ticker":"ETH-USD"
+      "exchangeName": "Kucoin",
+      "ticker": "ETH-USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"CryptoCom",
-      "ticker":"ETH_USD"
+      "exchangeName": "Mexc",
+      "ticker": "ETH_USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Kraken",
-      "ticker":"XETHZUSD"
-    },
-    {
-      "exchangeName":"Okx",
-      "ticker":"ETH-USDT"
+      "exchangeName": "Okx",
+      "ticker": "ETH-USDT",
+      "adjustByMarket": "USDT-USD"
     }
   ]
 }

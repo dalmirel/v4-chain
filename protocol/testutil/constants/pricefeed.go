@@ -1,11 +1,11 @@
 package constants
 
 import (
-	"github.com/dydxprotocol/v4/daemons/pricefeed/api"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	daemonClientTypes "github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
-	"github.com/dydxprotocol/v4/testutil/client"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/api"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	daemonClientTypes "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/client"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 var (
@@ -19,6 +19,11 @@ var (
 	MarketId9  = uint32(9)
 	MarketId10 = uint32(10)
 	MarketId11 = uint32(11)
+
+	// Exponents
+	Exponent9 = int32(-9)
+	Exponent8 = int32(-8)
+	Exponent7 = int32(-7)
 
 	// Exchanges
 	ExchangeId0 = "Exchange0"
@@ -314,14 +319,17 @@ var (
 	AllMarketParamsMinExchanges2 = []types.MarketParam{
 		{
 			Id:           MarketId9,
+			Exponent:     Exponent9,
 			MinExchanges: 2,
 		},
 		{
 			Id:           MarketId8,
+			Exponent:     Exponent8,
 			MinExchanges: 2,
 		},
 		{
 			Id:           MarketId7,
+			Exponent:     Exponent7,
 			MinExchanges: 2,
 		},
 	}
@@ -369,42 +377,64 @@ var (
 
 	// MutableExchangeMarketConfigs for 0, 1, 2, 3, and 5 markets.
 	Exchange1_NoMarkets_MutableExchangeMarketConfig = daemonClientTypes.MutableExchangeMarketConfig{
-		Id:             ExchangeId1,
-		MarketToTicker: map[daemonClientTypes.MarketId]string{},
+		Id:                   ExchangeId1,
+		MarketToMarketConfig: map[daemonClientTypes.MarketId]daemonClientTypes.MarketConfig{},
 	}
 
 	Exchange1_1Markets_MutableExchangeMarketConfig = daemonClientTypes.MutableExchangeMarketConfig{
 		Id: ExchangeId1,
-		MarketToTicker: map[daemonClientTypes.MarketId]string{
-			MarketId7: "BTC-USD",
+		MarketToMarketConfig: map[daemonClientTypes.MarketId]daemonClientTypes.MarketConfig{
+			MarketId7: {
+				Ticker: "BTC-USD",
+			},
 		},
 	}
 
 	Exchange1_2Markets_MutableExchangeMarketConfig = daemonClientTypes.MutableExchangeMarketConfig{
 		Id: ExchangeId1,
-		MarketToTicker: map[daemonClientTypes.MarketId]string{
-			MarketId7: "BTC-USD",
-			MarketId8: "ETH-USD",
+		MarketToMarketConfig: map[daemonClientTypes.MarketId]daemonClientTypes.MarketConfig{
+			MarketId7: {
+				Ticker: "BTC-USD",
+			},
+			MarketId8: {
+				Ticker: "ETH-USD",
+			},
 		},
 	}
 
 	Exchange1_3Markets_MutableExchangeMarketConfig = daemonClientTypes.MutableExchangeMarketConfig{
 		Id: ExchangeId1,
-		MarketToTicker: map[daemonClientTypes.MarketId]string{
-			MarketId7: "BTC-USD",
-			MarketId8: "ETH-USD",
-			MarketId9: "LTC-USD",
+		MarketToMarketConfig: map[daemonClientTypes.MarketId]daemonClientTypes.MarketConfig{
+			MarketId7: {
+				Ticker: "BTC-USD",
+			},
+			MarketId8: {
+				Ticker: "ETH-USD",
+			},
+			MarketId9: {
+				Ticker: "LTC-USD",
+			},
 		},
 	}
 
 	Exchange1_5Markets_MutableExchangeMarketConfig = daemonClientTypes.MutableExchangeMarketConfig{
 		Id: ExchangeId1,
-		MarketToTicker: map[daemonClientTypes.MarketId]string{
-			MarketId7:  "BTC-USD",
-			MarketId8:  "ETH-USD",
-			MarketId9:  "LTC-USD",
-			MarketId10: "XRP-USD",
-			MarketId11: "BCH-USD",
+		MarketToMarketConfig: map[daemonClientTypes.MarketId]daemonClientTypes.MarketConfig{
+			MarketId7: {
+				Ticker: "BTC-USD",
+			},
+			MarketId8: {
+				Ticker: "ETH-USD",
+			},
+			MarketId9: {
+				Ticker: "LTC-USD",
+			},
+			MarketId10: {
+				Ticker: "XRP-USD",
+			},
+			MarketId11: {
+				Ticker: "BCH-USD",
+			},
 		},
 	}
 
@@ -468,16 +498,24 @@ var (
 
 	CoinbaseMutableMarketConfig = &daemonClientTypes.MutableExchangeMarketConfig{
 		Id: CoinbaseExchangeName,
-		MarketToTicker: map[uint32]string{
-			MarketId7: "BTC-USD",
-			MarketId8: "ETH-USD",
+		MarketToMarketConfig: map[daemonClientTypes.MarketId]daemonClientTypes.MarketConfig{
+			MarketId7: {
+				Ticker: "BTC-USD",
+			},
+			MarketId8: {
+				Ticker: "ETH-USD",
+			},
 		},
 	}
 	BinanceMutableMarketConfig = &daemonClientTypes.MutableExchangeMarketConfig{
 		Id: BinanceExchangeName,
-		MarketToTicker: map[uint32]string{
-			MarketId7: "BTCUSDT",
-			MarketId8: "ETHUSDT",
+		MarketToMarketConfig: map[daemonClientTypes.MarketId]daemonClientTypes.MarketConfig{
+			MarketId7: {
+				Ticker: "BTCUSDT",
+			},
+			MarketId8: {
+				Ticker: "ETHUSDT",
+			},
 		},
 	}
 
@@ -512,14 +550,16 @@ var (
 
 	TestMutableMarketConfigs = map[daemonClientTypes.MarketId]*daemonClientTypes.MutableMarketConfig{
 		MarketId7: {
-			Id:       MarketId7,
-			Pair:     BtcUsdPair,
-			Exponent: BtcUsdExponent,
+			Id:           MarketId7,
+			Pair:         BtcUsdPair,
+			Exponent:     BtcUsdExponent,
+			MinExchanges: 1,
 		},
 		MarketId8: {
-			Id:       MarketId8,
-			Pair:     EthUsdPair,
-			Exponent: EthUsdExponent,
+			Id:           MarketId8,
+			Pair:         EthUsdPair,
+			Exponent:     EthUsdExponent,
+			MinExchanges: 1,
 		},
 	}
 
@@ -528,69 +568,88 @@ var (
 
 	MutableMarketConfigs_1Markets = []*daemonClientTypes.MutableMarketConfig{
 		{
-			Id:       MarketId7,
-			Pair:     BtcUsdPair,
-			Exponent: BtcUsdExponent,
+			Id:           MarketId7,
+			Pair:         BtcUsdPair,
+			Exponent:     BtcUsdExponent,
+			MinExchanges: 1,
 		},
 	}
 
 	MutableMarketConfigs_2Markets = []*daemonClientTypes.MutableMarketConfig{
 		{
-			Id:       MarketId7,
-			Pair:     BtcUsdPair,
-			Exponent: BtcUsdExponent,
+			Id:           MarketId7,
+			Pair:         BtcUsdPair,
+			Exponent:     BtcUsdExponent,
+			MinExchanges: 1,
 		},
 		{
-			Id:       MarketId8,
-			Pair:     EthUsdPair,
-			Exponent: EthUsdExponent,
+			Id:           MarketId8,
+			Pair:         EthUsdPair,
+			Exponent:     EthUsdExponent,
+			MinExchanges: 1,
 		},
 	}
 
 	MutableMarketConfigs_3Markets = []*daemonClientTypes.MutableMarketConfig{
 		{
-			Id:       MarketId7,
-			Pair:     BtcUsdPair,
-			Exponent: BtcUsdExponent,
+			Id:           MarketId7,
+			Pair:         BtcUsdPair,
+			Exponent:     BtcUsdExponent,
+			MinExchanges: 1,
 		},
 		{
-			Id:       MarketId8,
-			Pair:     EthUsdPair,
-			Exponent: EthUsdExponent,
+			Id:           MarketId8,
+			Pair:         EthUsdPair,
+			Exponent:     EthUsdExponent,
+			MinExchanges: 1,
 		},
 		{
-			Id:       MarketId9,
-			Pair:     LtcUsdPair,
-			Exponent: LtcUsdExponent,
+			Id:           MarketId9,
+			Pair:         LtcUsdPair,
+			Exponent:     LtcUsdExponent,
+			MinExchanges: 1,
 		},
 	}
 
 	MutableMarketConfigs_5Markets = []*daemonClientTypes.MutableMarketConfig{
 		{
-			Id:       MarketId7,
-			Pair:     BtcUsdPair,
-			Exponent: BtcUsdExponent,
+			Id:           MarketId7,
+			Pair:         BtcUsdPair,
+			Exponent:     BtcUsdExponent,
+			MinExchanges: 1,
 		},
 		{
-			Id:       MarketId8,
-			Pair:     EthUsdPair,
-			Exponent: EthUsdExponent,
+			Id:           MarketId8,
+			Pair:         EthUsdPair,
+			Exponent:     EthUsdExponent,
+			MinExchanges: 1,
 		},
 		{
-			Id:       MarketId9,
-			Pair:     LtcUsdPair,
-			Exponent: LtcUsdExponent,
+			Id:           MarketId9,
+			Pair:         LtcUsdPair,
+			Exponent:     LtcUsdExponent,
+			MinExchanges: 1,
 		},
 		{
-			Id:       MarketId10,
-			Pair:     SolUsdPair,
-			Exponent: SolUsdExponent,
+			Id:           MarketId10,
+			Pair:         SolUsdPair,
+			Exponent:     SolUsdExponent,
+			MinExchanges: 1,
 		},
 		{
-			Id:       MarketId11,
-			Pair:     MaticUsdPair,
-			Exponent: MaticUsdExponent,
+			Id:           MarketId11,
+			Pair:         MaticUsdPair,
+			Exponent:     MaticUsdExponent,
+			MinExchanges: 1,
 		},
+	}
+
+	MarketToMutableMarketConfigs_5Markets = map[daemonClientTypes.MarketId]*daemonClientTypes.MutableMarketConfig{
+		MarketId7:  MutableMarketConfigs_5Markets[0],
+		MarketId8:  MutableMarketConfigs_5Markets[1],
+		MarketId9:  MutableMarketConfigs_5Markets[2],
+		MarketId10: MutableMarketConfigs_5Markets[3],
+		MarketId11: MutableMarketConfigs_5Markets[4],
 	}
 
 	// Expected exponents for above configs.

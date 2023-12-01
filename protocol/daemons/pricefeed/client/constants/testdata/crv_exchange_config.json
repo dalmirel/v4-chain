@@ -1,40 +1,37 @@
 {
-  "exchanges":[
+  "exchanges": [
     {
-      "exchangeName":"Binance",
-      "ticker":"\"CRVUSDT\""
+      "exchangeName": "Binance",
+      "ticker": "CRVUSDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"BinanceUS",
-      "ticker":"\"CRVUSD\""
+      "exchangeName": "CoinbasePro",
+      "ticker": "CRV-USD"
     },
     {
-      "exchangeName":"Bybit",
-      "ticker":"CRVUSDT"
+      "exchangeName": "Gate",
+      "ticker": "CRV_USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"CoinbasePro",
-      "ticker":"CRV-USD"
+      "exchangeName": "Kraken",
+      "ticker": "CRVUSD"
     },
     {
-      "exchangeName":"Gate",
-      "ticker":"CRV_USDT"
+      "exchangeName": "Kucoin",
+      "ticker": "CRV-USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Huobi",
-      "ticker":"crvusdt"
+      "exchangeName": "Mexc",
+      "ticker": "CRV_USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Kraken",
-      "ticker":"CRVUSD"
-    },
-    {
-      "exchangeName":"Kucoin",
-      "ticker":"CRV-USDT"
-    },
-    {
-      "exchangeName":"Okx",
-      "ticker":"CRV-USDT"
+      "exchangeName": "Okx",
+      "ticker": "CRV-USDT",
+      "adjustByMarket": "USDT-USD"
     }
   ]
 }

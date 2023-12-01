@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"sort"
 
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	errorsmod "cosmossdk.io/errors"
+
+	gometrics "github.com/armon/go-metrics"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 )
 
 const (
@@ -60,7 +63,7 @@ func (o *OrderId) MustBeStatefulOrder() {
 func (o *OrderId) MustBeConditionalOrder() {
 	if !o.IsConditionalOrder() {
 		panic(
-			fmt.Errorf(
+			fmt.Sprintf(
 				"MustBeConditionalOrder: called with non-conditional order ID (%+v)",
 				o,
 			),
@@ -89,9 +92,20 @@ func (o *OrderId) Validate() error {
 		return err
 	}
 	if !o.IsShortTermOrder() && !o.IsStatefulOrder() {
-		return sdkerrors.Wrapf(ErrInvalidOrderFlag, "orderId: %v", o)
+		return errorsmod.Wrapf(ErrInvalidOrderFlag, "orderId: %v", o)
 	}
 	return nil
+}
+
+// ToStateKey returns a bytes representation of a OrderId for use as a state key.
+// The key uses the proto marshaling of the object such that it can be unmarshalled in
+// the same way if it needs to be.
+func (o *OrderId) ToStateKey() []byte {
+	b, err := o.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 // SortedOrders is type alias for `*OrderId` which supports deterministic
@@ -157,4 +171,12 @@ func MustSortAndHaveNoDuplicates(orderIds []OrderId) {
 		orderIdSet[orderId] = struct{}{}
 	}
 	sort.Sort(SortedOrders(orderIds))
+}
+
+// GetOrderIdLabels returns the telemetry labels of this order ID.
+func (o *OrderId) GetOrderIdLabels() []gometrics.Label {
+	return []gometrics.Label{
+		metrics.GetLabelForIntValue(metrics.OrderFlag, int(o.GetOrderFlags())),
+		metrics.GetLabelForIntValue(metrics.ClobPairId, int(o.GetClobPairId())),
+	}
 }

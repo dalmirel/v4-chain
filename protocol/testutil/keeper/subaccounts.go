@@ -1,10 +1,15 @@
 package keeper
 
 import (
-	"github.com/dydxprotocol/v4/indexer/indexer_manager"
-	"github.com/dydxprotocol/v4/mocks"
 	"math/big"
 	"testing"
+
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/common"
+	indexerevents "github.com/dydxprotocol/v4-chain/protocol/indexer/events"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
 
 	tmdb "github.com/cometbft/cometbft-db"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -13,13 +18,13 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	"github.com/dydxprotocol/v4/dtypes"
-	"github.com/dydxprotocol/v4/lib"
-	asskeeper "github.com/dydxprotocol/v4/x/assets/keeper"
-	perpskeeper "github.com/dydxprotocol/v4/x/perpetuals/keeper"
-	priceskeeper "github.com/dydxprotocol/v4/x/prices/keeper"
-	"github.com/dydxprotocol/v4/x/subaccounts/keeper"
-	"github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	asskeeper "github.com/dydxprotocol/v4-chain/protocol/x/assets/keeper"
+	assettypes "github.com/dydxprotocol/v4-chain/protocol/x/assets/types"
+	perpskeeper "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/keeper"
+	priceskeeper "github.com/dydxprotocol/v4-chain/protocol/x/prices/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 func SubaccountsKeepers(
@@ -35,6 +40,7 @@ func SubaccountsKeepers(
 	assetsKeeper *asskeeper.Keeper,
 	storeKey storetypes.StoreKey,
 ) {
+	var mockTimeProvider *mocks.TimeProvider
 	ctx = initKeepers(t, func(
 		db *tmdb.MemDB,
 		registry codectypes.InterfaceRegistry,
@@ -43,10 +49,10 @@ func SubaccountsKeepers(
 		transientStoreKey storetypes.StoreKey,
 	) []GenesisInitializer {
 		// Define necessary keepers here for unit tests
-		pricesKeeper, _, _, _, _ = createPricesKeeper(stateStore, db, cdc, transientStoreKey)
+		pricesKeeper, _, _, _, mockTimeProvider = createPricesKeeper(stateStore, db, cdc, transientStoreKey)
 		epochsKeeper, _ := createEpochsKeeper(stateStore, db, cdc)
 		perpetualsKeeper, _ = createPerpetualsKeeper(stateStore, db, cdc, pricesKeeper, epochsKeeper, transientStoreKey)
-		assetsKeeper, _ = createAssetsKeeper(stateStore, db, cdc, pricesKeeper)
+		assetsKeeper, _ = createAssetsKeeper(stateStore, db, cdc, pricesKeeper, transientStoreKey, msgSenderEnabled)
 
 		accountKeeper, _ = createAccountKeeper(stateStore, db, cdc, registry)
 
@@ -64,6 +70,9 @@ func SubaccountsKeepers(
 
 		return []GenesisInitializer{pricesKeeper, perpetualsKeeper, assetsKeeper, keeper}
 	})
+
+	// Mock time provider response for market creation.
+	mockTimeProvider.On("Now").Return(constants.TimeT)
 
 	return ctx, keeper, pricesKeeper, perpetualsKeeper, accountKeeper, bankKeeper, assetsKeeper, storeKey
 }
@@ -103,7 +112,7 @@ func CreateUsdcAssetPosition(
 ) []*types.AssetPosition {
 	return []*types.AssetPosition{
 		{
-			AssetId:  lib.UsdcAssetId,
+			AssetId:  assettypes.AssetUsdc.Id,
 			Quantums: dtypes.NewIntFromBigInt(quoteBalance),
 		},
 	}
@@ -114,8 +123,34 @@ func CreateUsdcAssetUpdate(
 ) []types.AssetUpdate {
 	return []types.AssetUpdate{
 		{
-			AssetId:          lib.UsdcAssetId,
+			AssetId:          assettypes.AssetUsdc.Id,
 			BigQuantumsDelta: deltaQuoteBalance,
 		},
 	}
+}
+
+// GetSubaccountUpdateEventsFromIndexerBlock returns the subaccount update events in the
+// Indexer Block event Kafka message.
+func GetSubaccountUpdateEventsFromIndexerBlock(
+	ctx sdk.Context,
+	keeper *keeper.Keeper,
+) []*indexerevents.SubaccountUpdateEventV1 {
+	var subaccountUpdates []*indexerevents.SubaccountUpdateEventV1
+	block := keeper.GetIndexerEventManager().ProduceBlock(ctx)
+	if block == nil {
+		return subaccountUpdates
+	}
+	for _, event := range block.Events {
+		if event.Subtype != indexerevents.SubtypeSubaccountUpdate {
+			continue
+		}
+		unmarshaler := common.UnmarshalerImpl{}
+		var subaccountUpdate indexerevents.SubaccountUpdateEventV1
+		err := unmarshaler.Unmarshal(event.DataBytes, &subaccountUpdate)
+		if err != nil {
+			panic(err)
+		}
+		subaccountUpdates = append(subaccountUpdates, &subaccountUpdate)
+	}
+	return subaccountUpdates
 }

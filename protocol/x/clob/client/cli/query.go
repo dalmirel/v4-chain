@@ -7,7 +7,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 
-	"github.com/dydxprotocol/v4/x/clob/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
 )
 
 // GetQueryCmd returns the cli query commands for this module
@@ -23,6 +23,9 @@ func GetQueryCmd(queryRoute string) *cobra.Command {
 
 	cmd.AddCommand(CmdListClobPair())
 	cmd.AddCommand(CmdShowClobPair())
+	cmd.AddCommand(CmdGetBlockRateLimitConfiguration())
+	cmd.AddCommand(CmdGetEquityTierLimitConfig())
+	cmd.AddCommand(CmdGetLiquidationsConfiguration())
 
 	return cmd
 }

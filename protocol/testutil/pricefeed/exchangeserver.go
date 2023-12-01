@@ -3,10 +3,11 @@ package pricefeed
 import (
 	"context"
 	"fmt"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants/exchange_common"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/price_function/testexchange"
-	pricefeed "github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants/exchange_common"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/price_function/testexchange"
+	pricefeed "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/daemons/pricefeed/exchange_config"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/client/testutil"
 	"io"
 	"log"
 	"net/http"
@@ -27,13 +28,13 @@ var (
 )
 
 func init() {
-	marketToTicker := constants.StaticExchangeMarketConfig[exchange_common.EXCHANGE_ID_TEST_EXCHANGE].MarketToTicker
-	for marketId, symbol := range marketToTicker {
-		testExchangeSymbolToMarketId[symbol] = marketId
+	testExchangeConfig := exchange_config.TestnetExchangeMarketConfig[exchange_common.EXCHANGE_ID_TEST_EXCHANGE]
+	for marketId, config := range testExchangeConfig.MarketToMarketConfig {
+		testExchangeSymbolToMarketId[config.Ticker] = marketId
 	}
-	marketToTicker = constants.StaticExchangeMarketConfig[exchange_common.EXCHANGE_ID_BITFINEX].MarketToTicker
-	for marketId, symbol := range marketToTicker {
-		bitfinexExchangeSymbolToMarketId[symbol] = marketId
+
+	for marketId, config := range testutil.BitfinexExchangeConfig {
+		bitfinexExchangeSymbolToMarketId[config.Ticker] = marketId
 	}
 }
 

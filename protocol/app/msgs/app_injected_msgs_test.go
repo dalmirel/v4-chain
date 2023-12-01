@@ -1,6 +1,7 @@
 package msgs_test
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -9,22 +10,18 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 
-	"github.com/dydxprotocol/v4/app/msgs"
-	"github.com/dydxprotocol/v4/lib/maps"
-	"github.com/dydxprotocol/v4/testutil/encoding"
-	testmsgs "github.com/dydxprotocol/v4/testutil/msgs"
+	"github.com/dydxprotocol/v4-chain/protocol/app/msgs"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/encoding"
+	testmsgs "github.com/dydxprotocol/v4-chain/protocol/testutil/msgs"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAppInjectedMsgSamples_Key(t *testing.T) {
 	expectedMsgs := []string{
-		// blocktime
-		"/dydxprotocol.blocktime.MsgIsDelayedBlock",
-		"/dydxprotocol.blocktime.MsgIsDelayedBlockResponse",
-
 		// bridge
-		"/dydxprotocol.bridge.MsgAcknowledgeBridge",
-		"/dydxprotocol.bridge.MsgAcknowledgeBridgeResponse",
+		"/dydxprotocol.bridge.MsgAcknowledgeBridges",
+		"/dydxprotocol.bridge.MsgAcknowledgeBridgesResponse",
 
 		// clob
 		"/dydxprotocol.clob.MsgProposedOperations",
@@ -39,18 +36,30 @@ func TestAppInjectedMsgSamples_Key(t *testing.T) {
 		"/dydxprotocol.prices.MsgUpdateMarketPricesResponse",
 	}
 
-	require.Equal(t, expectedMsgs, maps.GetSortedKeys(msgs.AppInjectedMsgSamples))
+	require.Equal(t, expectedMsgs, lib.GetSortedKeys[sort.StringSlice](msgs.AppInjectedMsgSamples))
 }
 
 func TestAppInjectedMsgSamples_Value(t *testing.T) {
-	validateSampleMsgValue(t, msgs.AppInjectedMsgSamples)
+	validateMsgValue(t, msgs.AppInjectedMsgSamples)
 }
 
-// validateSampleMsgValue ensures that the sample message is
+func TestAppInjectedMsgSamples_GetSigners(t *testing.T) {
+	testEncodingCfg := encoding.GetTestEncodingCfg()
+	testTxBuilder := testEncodingCfg.TxConfig.NewTxBuilder()
+
+	for _, sample := range testmsgs.GetNonNilSampleMsgs(msgs.AppInjectedMsgSamples) {
+		_ = testTxBuilder.SetMsgs(sample.Msg)
+		sigTx, ok := testTxBuilder.GetTx().(authsigning.SigVerifiableTx)
+		require.True(t, ok)
+		require.Empty(t, sigTx.GetSigners())
+	}
+}
+
+// validateMsgValue ensures that the message is
 //  1. not nil for "<module>.<version>.Msg<Name>"
 //  2. sample msg's proto msg name matches the key it's registered under
 //  3. nil sample message for others
-func validateSampleMsgValue(
+func validateMsgValue(
 	t *testing.T,
 	sampleMsgs map[string]sdk.Msg,
 ) {
@@ -68,17 +77,5 @@ func validateSampleMsgValue(
 			// Additionally, all other intermediary msgs should not be submitted as a top-level msg.
 			require.Nil(t, sample)
 		}
-	}
-}
-
-func TestAppInjectedMsgSamples_GetSigners(t *testing.T) {
-	testEncodingCfg := encoding.GetTestEncodingCfg()
-	testTxBuilder := testEncodingCfg.TxConfig.NewTxBuilder()
-
-	for _, sample := range testmsgs.GetNonNilSampleMsgs(msgs.AppInjectedMsgSamples) {
-		_ = testTxBuilder.SetMsgs(sample.Msg)
-		sigTx, ok := testTxBuilder.GetTx().(authsigning.SigVerifiableTx)
-		require.True(t, ok)
-		require.Empty(t, sigTx.GetSigners())
 	}
 }

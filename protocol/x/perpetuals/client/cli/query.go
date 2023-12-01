@@ -10,7 +10,7 @@ import (
 	// "github.com/cosmos/cosmos-sdk/client/flags"
 	// sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/dydxprotocol/v4/x/perpetuals/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
 )
 
 // GetQueryCmd returns the cli query commands for this module
@@ -26,6 +26,9 @@ func GetQueryCmd(queryRoute string) *cobra.Command {
 
 	cmd.AddCommand(CmdListPerpetual())
 	cmd.AddCommand(CmdShowPerpetual())
+	cmd.AddCommand(CmdQueryParams())
+	cmd.AddCommand(CmdQueryPremiumSamples())
+	cmd.AddCommand(CmdQueryPremiumVotes())
 	// this line is used by starport scaffolding # 1
 
 	return cmd

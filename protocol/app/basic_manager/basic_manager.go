@@ -8,6 +8,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/consensus"
 	"github.com/cosmos/cosmos-sdk/x/crisis"
 	distr "github.com/cosmos/cosmos-sdk/x/distribution"
+	"github.com/cosmos/cosmos-sdk/x/evidence"
 	feegrantmodule "github.com/cosmos/cosmos-sdk/x/feegrant/module"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
@@ -18,20 +19,22 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking"
 	"github.com/cosmos/cosmos-sdk/x/upgrade"
 	upgradeclient "github.com/cosmos/cosmos-sdk/x/upgrade/client"
+	delaymsgmodule "github.com/dydxprotocol/v4-chain/protocol/x/delaymsg"
 
-	custommodule "github.com/dydxprotocol/v4/app/module"
-	assetsmodule "github.com/dydxprotocol/v4/x/assets"
-	blocktimemodule "github.com/dydxprotocol/v4/x/blocktime"
-	bridgemodule "github.com/dydxprotocol/v4/x/bridge"
-	clobmodule "github.com/dydxprotocol/v4/x/clob"
-	epochsmodule "github.com/dydxprotocol/v4/x/epochs"
-	feetiersmodule "github.com/dydxprotocol/v4/x/feetiers"
-	perpetualsmodule "github.com/dydxprotocol/v4/x/perpetuals"
-	pricesmodule "github.com/dydxprotocol/v4/x/prices"
-	rewardsmodule "github.com/dydxprotocol/v4/x/rewards"
-	sendingmodule "github.com/dydxprotocol/v4/x/sending"
-	statsmodule "github.com/dydxprotocol/v4/x/stats"
-	subaccountsmodule "github.com/dydxprotocol/v4/x/subaccounts"
+	custommodule "github.com/dydxprotocol/v4-chain/protocol/app/module"
+	assetsmodule "github.com/dydxprotocol/v4-chain/protocol/x/assets"
+	blocktimemodule "github.com/dydxprotocol/v4-chain/protocol/x/blocktime"
+	bridgemodule "github.com/dydxprotocol/v4-chain/protocol/x/bridge"
+	clobmodule "github.com/dydxprotocol/v4-chain/protocol/x/clob"
+	epochsmodule "github.com/dydxprotocol/v4-chain/protocol/x/epochs"
+	feetiersmodule "github.com/dydxprotocol/v4-chain/protocol/x/feetiers"
+	perpetualsmodule "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals"
+	pricesmodule "github.com/dydxprotocol/v4-chain/protocol/x/prices"
+	rewardsmodule "github.com/dydxprotocol/v4-chain/protocol/x/rewards"
+	sendingmodule "github.com/dydxprotocol/v4-chain/protocol/x/sending"
+	statsmodule "github.com/dydxprotocol/v4-chain/protocol/x/stats"
+	subaccountsmodule "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts"
+	vestmodule "github.com/dydxprotocol/v4-chain/protocol/x/vest"
 
 	"github.com/cosmos/ibc-go/v7/modules/apps/transfer"
 	ibc "github.com/cosmos/ibc-go/v7/modules/core"
@@ -67,6 +70,7 @@ var (
 		ibc.AppModuleBasic{},
 		ibctm.AppModuleBasic{},
 		upgrade.AppModuleBasic{},
+		evidence.AppModuleBasic{},
 		transfer.AppModuleBasic{},
 		consensus.AppModuleBasic{},
 
@@ -80,7 +84,9 @@ var (
 		statsmodule.AppModuleBasic{},
 		subaccountsmodule.AppModuleBasic{},
 		clobmodule.AppModuleBasic{},
+		vestmodule.AppModuleBasic{},
 		rewardsmodule.AppModuleBasic{},
+		delaymsgmodule.AppModuleBasic{},
 		sendingmodule.AppModuleBasic{},
 		epochsmodule.AppModuleBasic{},
 	)

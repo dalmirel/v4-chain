@@ -6,7 +6,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/dydxprotocol/v4/x/bridge/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/bridge/types"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,9 @@ func GetQueryCmd(queryRoute string) *cobra.Command {
 	cmd.AddCommand(CmdQueryEventParams())
 	cmd.AddCommand(CmdQueryProposeParams())
 	cmd.AddCommand(CmdQuerySafetyParams())
-	cmd.AddCommand(CmdQueryNextAcknowledgedEventId())
+	cmd.AddCommand(CmdQueryAcknowledgedEventInfo())
+	cmd.AddCommand(CmdQueryRecognizedEventInfo())
+	cmd.AddCommand(CmdQueryDelayedCompleteBridgeMessages())
 
 	return cmd
 }
@@ -98,16 +100,71 @@ func CmdQuerySafetyParams() *cobra.Command {
 	return cmd
 }
 
-func CmdQueryNextAcknowledgedEventId() *cobra.Command {
+func CmdQueryAcknowledgedEventInfo() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get-next-acknowledged-event-id",
-		Short: "get the NextAcknowledgedEventId",
+		Use:   "get-acknowledged-event-info",
+		Short: "get the AcknowledgedEventInfo",
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			clientCtx := client.GetClientContextFromCmd(cmd)
 			queryClient := types.NewQueryClient(clientCtx)
-			res, err := queryClient.NextAcknowledgedEventId(
+			res, err := queryClient.AcknowledgedEventInfo(
 				context.Background(),
-				&types.QueryNextAcknowledgedEventIdRequest{},
+				&types.QueryAcknowledgedEventInfoRequest{},
+			)
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
+	return cmd
+}
+
+func CmdQueryRecognizedEventInfo() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "get-recognized-event-info",
+		Short: "get the RecognizedEventInfo",
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			clientCtx := client.GetClientContextFromCmd(cmd)
+			queryClient := types.NewQueryClient(clientCtx)
+			res, err := queryClient.RecognizedEventInfo(
+				context.Background(),
+				&types.QueryRecognizedEventInfoRequest{},
+			)
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
+	return cmd
+}
+
+func CmdQueryDelayedCompleteBridgeMessages() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "get-delayed-complete-bridge-messages",
+		Short: "get complete bridge messages that are delayed (not yet executed)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			clientCtx := client.GetClientContextFromCmd(cmd)
+			queryClient := types.NewQueryClient(clientCtx)
+
+			address := ""
+			if len(args) > 0 {
+				address = args[0]
+			}
+
+			res, err := queryClient.DelayedCompleteBridgeMessages(
+				context.Background(),
+				&types.QueryDelayedCompleteBridgeMessagesRequest{
+					Address: address,
+				},
 			)
 			if err != nil {
 				return err

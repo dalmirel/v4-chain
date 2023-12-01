@@ -4,13 +4,14 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 // getProposalPrice returns the proposed price update for the next block, which is either the smoothed price or the
-// index price - whichever is closer to the current market price.
+// index price - whichever is closer to the current market price. In cases where the smoothed price and the index price
+// are equidistant from the current market price, the smoothed price is chosen.
 func getProposalPrice(smoothedPrice uint64, indexPrice uint64, marketPrice uint64) uint64 {
 	if lib.AbsDiffUint64(smoothedPrice, marketPrice) > lib.AbsDiffUint64(indexPrice, marketPrice) {
 		return indexPrice
@@ -26,7 +27,8 @@ func isAboveRequiredMinPriceChange(marketParamPrice types.MarketParamPrice, newP
 }
 
 // getMinPriceChangeAmountForMarket returns the amount of price change that is needed to trigger
-// a price update in accordance with the min price change parts-per-million value.
+// a price update in accordance with the min price change parts-per-million value. This method always rounds down,
+// which slightly biases towards price updates.
 func getMinPriceChangeAmountForMarket(marketParamPrice types.MarketParamPrice) uint64 {
 	bigPrice := new(big.Int).SetUint64(marketParamPrice.Price.Price)
 	// There's no need to multiply this by the market's exponent, because `Price` comparisons are

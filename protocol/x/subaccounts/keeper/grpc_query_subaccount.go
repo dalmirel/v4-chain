@@ -6,7 +6,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/store/prefix"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
-	"github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -23,7 +23,7 @@ func (k Keeper) SubaccountAll(
 	ctx := sdk.UnwrapSDKContext(c)
 
 	store := ctx.KVStore(k.storeKey)
-	subaccountStore := prefix.NewStore(store, types.KeyPrefix(types.SubaccountKeyPrefix))
+	subaccountStore := prefix.NewStore(store, []byte(types.SubaccountKeyPrefix))
 
 	pageRes, err := query.Paginate(subaccountStore, req.Pagination, func(key []byte, value []byte) error {
 		var subaccount types.Subaccount

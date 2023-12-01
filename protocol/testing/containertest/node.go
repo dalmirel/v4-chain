@@ -15,8 +15,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	gogogrpc "github.com/cosmos/gogoproto/grpc"
 	"github.com/cosmos/gogoproto/proto"
-	"github.com/dydxprotocol/v4/cmd/dydxprotocold/cmd"
-	"github.com/dydxprotocol/v4/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/cmd/dydxprotocold/cmd"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
 	"github.com/ory/dockertest/v3"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
@@ -151,7 +151,15 @@ func BroadcastTx[M cosmos.Msg](n *Node, message M, signer string) (err error) {
 		return err
 	}
 
-	if err = tx.GenerateOrBroadcastTxCLI(*clientContext, flags, message); err != nil {
+	txFactory, err := tx.NewFactoryCLI(*clientContext, flags)
+	if err != nil {
+		return err
+	}
+
+	// Use default gas limit and gas fee.
+	txFactory = txFactory.WithGas(constants.TestGasLimit).WithFees(constants.TestFee)
+
+	if err = tx.GenerateOrBroadcastTxWithFactory(*clientContext, txFactory, message); err != nil {
 		return err
 	}
 	return nil

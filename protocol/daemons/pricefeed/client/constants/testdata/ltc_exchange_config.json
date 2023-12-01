@@ -1,36 +1,42 @@
 {
-  "exchanges":[
+  "exchanges": [
     {
-      "exchangeName":"Binance",
-      "ticker":"\"LTCUSDT\""
+      "exchangeName": "Binance",
+      "ticker": "LTCUSDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"BinanceUS",
-      "ticker":"\"LTCUSD\""
+      "exchangeName": "Bybit",
+      "ticker": "LTCUSDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Bybit",
-      "ticker":"LTCUSDT"
+      "exchangeName": "CoinbasePro",
+      "ticker": "LTC-USD"
     },
     {
-      "exchangeName":"CoinbasePro",
-      "ticker":"LTC-USD"
+      "exchangeName": "Huobi",
+      "ticker": "ltcusdt",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Huobi",
-      "ticker":"ltcusdt"
+      "exchangeName": "Kraken",
+      "ticker": "XLTCZUSD"
     },
     {
-      "exchangeName":"Kraken",
-      "ticker":"XLTCZUSD"
+      "exchangeName": "Kucoin",
+      "ticker": "LTC-USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Kucoin",
-      "ticker":"LTC-USDT"
+      "exchangeName": "Mexc",
+      "ticker": "LTC_USDT",
+      "adjustByMarket": "USDT-USD"
     },
     {
-      "exchangeName":"Okx",
-      "ticker":"LTC-USDT"
+      "exchangeName": "Okx",
+      "ticker": "LTC-USDT",
+      "adjustByMarket": "USDT-USD"
     }
   ]
 }

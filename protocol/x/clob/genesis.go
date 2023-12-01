@@ -1,11 +1,11 @@
 package clob
 
 import (
+	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/dydxprotocol/v4/x/clob/keeper"
-	"github.com/dydxprotocol/v4/x/clob/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 // InitGenesis initializes the capability module's state from a provided genesis
@@ -17,18 +17,16 @@ func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState types.GenesisState)
 	for _, elem := range genState.ClobPairs {
 		perpetualId, err := elem.GetPerpetualId()
 		if err != nil {
-			panic(sdkerrors.Wrap(types.ErrInvalidClobPairParameter, err.Error()))
+			panic(errorsmod.Wrap(types.ErrInvalidClobPairParameter, err.Error()))
 		}
 		_, err = k.CreatePerpetualClobPair(
 			ctx,
+			elem.Id,
 			perpetualId,
 			satypes.BaseQuantums(elem.StepBaseQuantums),
-			satypes.BaseQuantums(elem.MinOrderBaseQuantums),
 			elem.QuantumConversionExponent,
 			elem.SubticksPerTick,
 			elem.Status,
-			elem.MakerFeePpm,
-			elem.TakerFeePpm,
 		)
 		if err != nil {
 			panic(err)
@@ -44,10 +42,11 @@ func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState types.GenesisState)
 		panic(err)
 	}
 
-	k.InitializeProcessProposerMatchesEvents(ctx)
+	if err := k.InitializeEquityTierLimit(ctx, genState.EquityTierLimitConfig); err != nil {
+		panic(err)
+	}
 
-	// Set the last committed block-time to the genesis time.
-	k.SetBlockTimeForLastCommittedBlock(ctx)
+	k.InitializeProcessProposerMatchesEvents(ctx)
 }
 
 // ExportGenesis returns the capability module's exported genesis.
@@ -55,13 +54,16 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	genesis := types.DefaultGenesis()
 
 	// Read the CLOB pairs from state.
-	genesis.ClobPairs = k.GetAllClobPair(ctx)
+	genesis.ClobPairs = k.GetAllClobPairs(ctx)
 
 	// Read the liquidations config from state.
 	genesis.LiquidationsConfig = k.GetLiquidationsConfig(ctx)
 
 	// Read the block rate limit configuration from state.
 	genesis.BlockRateLimitConfig = k.GetBlockRateLimitConfiguration(ctx)
+
+	// Read the equity tier limit configuration from state.
+	genesis.EquityTierLimitConfig = k.GetEquityTierLimitConfiguration(ctx)
 
 	return genesis
 }

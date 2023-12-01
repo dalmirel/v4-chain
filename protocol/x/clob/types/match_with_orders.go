@@ -3,7 +3,7 @@ package types
 import (
 	"errors"
 
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 // MatchWithOrders represents a match which occurred between two orders and the amount that was matched.
@@ -73,8 +73,9 @@ func (match MatchWithOrders) Validate() error {
 	}
 
 	// Make sure the maker order is not an IOC order.
-	if makerOrder.MustGetOrder().TimeInForce == Order_TIME_IN_FORCE_IOC {
-		return errors.New("IOC order cannot be matched as a maker order")
+	unwrappedMakerOrder := makerOrder.MustGetOrder()
+	if unwrappedMakerOrder.RequiresImmediateExecution() {
+		return errors.New("IOC / FOK order cannot be matched as a maker order")
 	}
 	return nil
 }

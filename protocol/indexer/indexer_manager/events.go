@@ -1,16 +1,14 @@
 package indexer_manager
 
 import (
-	"encoding/base64"
-
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
-	ante_types "github.com/dydxprotocol/v4/app/ante/types"
-	"github.com/dydxprotocol/v4/indexer/common"
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/lib/metrics"
+	ante_types "github.com/dydxprotocol/v4-chain/protocol/app/ante/types"
+	"github.com/dydxprotocol/v4-chain/protocol/indexer/common"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/lib/metrics"
 )
 
 const (
@@ -42,44 +40,32 @@ func getIndexerEvents(ctx sdk.Context, storeKey storetypes.StoreKey) []*IndexerT
 	return events.Events
 }
 
-// GetB64EncodedEventMessage returns the base64 encoded event message.
-// TODO(DEC-1720): Deprecate this function once we change the underlying proto to use bytes.
-func GetB64EncodedEventMessage(
+// GetBytes returns the marshaled bytes of the event message.
+func GetBytes(
 	eventMessage proto.Message,
-) string {
+) []byte {
 	marshaler := &common.MarshalerImpl{}
 	eventMessageBytes, err := marshaler.Marshal(eventMessage)
 	if err != nil {
 		panic(err)
 	}
-
-	b64encodedEventMessage := base64.StdEncoding.EncodeToString(eventMessageBytes)
-	return b64encodedEventMessage
-}
-
-// GetBytesFromEventData returns the decoded bytes of the base64 event data string.
-func GetBytesFromEventData(
-	event string,
-) []byte {
-	bytes, err := base64.StdEncoding.DecodeString(event)
-	if err != nil {
-		panic(err)
-	}
-	return bytes
+	return eventMessageBytes
 }
 
 // addTxnEvent adds a transaction event to the context's transient store of indexer events.
 func addTxnEvent(
 	ctx sdk.Context,
 	subType string,
-	data string,
+	version uint32,
 	storeKey storetypes.StoreKey,
+	dataBytes []byte,
 ) {
 	event := IndexerTendermintEventWrapper{
 		Event: &IndexerTendermintEvent{
 			Subtype:             subType,
-			Data:                data,
+			Version:             version,
 			OrderingWithinBlock: &IndexerTendermintEvent_TransactionIndex{},
+			DataBytes:           dataBytes,
 		},
 		TxnHash: string(lib.GetTxHash(ctx.TxBytes())),
 	}
@@ -90,17 +76,19 @@ func addTxnEvent(
 func addBlockEvent(
 	ctx sdk.Context,
 	subType string,
-	data string,
 	storeKey storetypes.StoreKey,
 	blockEvent IndexerTendermintEvent_BlockEvent,
+	version uint32,
+	dataBytes []byte,
 ) {
 	event := IndexerTendermintEventWrapper{
 		Event: &IndexerTendermintEvent{
 			Subtype: subType,
-			Data:    data,
+			Version: version,
 			OrderingWithinBlock: &IndexerTendermintEvent_BlockEvent_{
 				BlockEvent: blockEvent,
 			},
+			DataBytes: dataBytes,
 		},
 	}
 	addEvent(ctx, event, storeKey)
@@ -125,6 +113,16 @@ func addEvent(
 	}
 	store := noGasCtx.TransientStore(storeKey)
 	store.Set([]byte(IndexerEventsKey), newEventsValueBytes)
+}
+
+// clearEvents clears events in the context's transient store of indexer events.
+func clearEvents(
+	ctx sdk.Context,
+	storeKey storetypes.StoreKey,
+) {
+	noGasCtx := ctx.WithGasMeter(ante_types.NewFreeInfiniteGasMeter())
+	store := noGasCtx.TransientStore(storeKey)
+	store.Delete([]byte(IndexerEventsKey))
 }
 
 // produceBlock returns the block. It should only be called in EndBlocker when the
@@ -174,6 +172,18 @@ func produceBlock(ctx sdk.Context, storeKey storetypes.StoreKey) *IndexerTenderm
 	allEvents := make([]*IndexerTendermintEvent, 0, numTxnEvents+len(blockEvents))
 	for _, txHash := range txHashes {
 		allEvents = append(allEvents, txEventsMap[txHash]...)
+	}
+	// set the event index of block events
+	numBeginBlockerEvents, numEndBlockerEvents := 0, 0
+	for i, event := range blockEvents {
+		switch event.GetBlockEvent() {
+		case IndexerTendermintEvent_BLOCK_EVENT_BEGIN_BLOCK:
+			blockEvents[i].EventIndex = uint32(numBeginBlockerEvents)
+			numBeginBlockerEvents++
+		case IndexerTendermintEvent_BLOCK_EVENT_END_BLOCK:
+			blockEvents[i].EventIndex = uint32(numEndBlockerEvents)
+			numEndBlockerEvents++
+		}
 	}
 	// append block events
 	allEvents = append(allEvents, blockEvents...)

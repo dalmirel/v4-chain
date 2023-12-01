@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dydxprotocol/v4/dtypes"
-	"github.com/dydxprotocol/v4/x/perpetuals/types"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,10 +22,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -50,16 +52,20 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 					{
-						Id:            0, // duplicate
-						Ticker:        "PERP-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0, // duplicate
+							Ticker:        "PERP-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -84,16 +90,20 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 					{
-						Id:            2, // duplicate
-						Ticker:        "PERP-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            2, // duplicate
+							Ticker:        "PERP-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -118,10 +128,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -146,10 +158,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -174,10 +188,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -202,10 +218,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -230,10 +248,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{
@@ -258,10 +278,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				Perpetuals: []types.Perpetual{
 					{
-						Id:            0,
-						Ticker:        "EXAM-USD",
-						FundingIndex:  dtypes.ZeroInt(),
-						LiquidityTier: 0,
+						Params: types.PerpetualParams{
+							Id:            0,
+							Ticker:        "EXAM-USD",
+							LiquidityTier: 0,
+						},
+						FundingIndex: dtypes.ZeroInt(),
 					},
 				},
 				LiquidityTiers: []types.LiquidityTier{

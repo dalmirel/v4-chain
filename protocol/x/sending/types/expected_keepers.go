@@ -6,7 +6,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
-	satypes "github.com/dydxprotocol/v4/x/subaccounts/types"
+	satypes "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types"
 )
 
 type SubaccountsKeeper interface {
@@ -64,9 +64,11 @@ type AccountKeeper interface {
 	HasAccount(ctx sdk.Context, addr sdk.AccAddress) bool
 	SetAccount(ctx sdk.Context, acc types.AccountI)
 	NewAccountWithAddress(ctx sdk.Context, addr sdk.AccAddress) types.AccountI
+	GetModuleAddress(moduleName string) sdk.AccAddress
 }
 
 // BankKeeper defines the expected bank keeper used for simulations.
 type BankKeeper interface {
 	SpendableCoins(ctx sdk.Context, addr sdk.AccAddress) sdk.Coins
+	SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
 }

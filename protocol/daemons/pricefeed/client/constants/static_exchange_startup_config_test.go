@@ -3,9 +3,9 @@ package constants_test
 import (
 	"testing"
 
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/constants/exchange_common"
-	"github.com/dydxprotocol/v4/daemons/pricefeed/client/types"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/constants/exchange_common"
+	"github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func TestStaticExchangeStartupConfigCache(t *testing.T) {
 			exchangeId: exchange_common.EXCHANGE_ID_BINANCE,
 			expectedValue: &types.ExchangeStartupConfig{
 				ExchangeId: exchange_common.EXCHANGE_ID_BINANCE,
-				IntervalMs: 4_250,
+				IntervalMs: 2_500,
 				TimeoutMs:  3_000,
 				MaxQueries: 1,
 			},
@@ -32,7 +32,7 @@ func TestStaticExchangeStartupConfigCache(t *testing.T) {
 			exchangeId: exchange_common.EXCHANGE_ID_BINANCE_US,
 			expectedValue: &types.ExchangeStartupConfig{
 				ExchangeId: exchange_common.EXCHANGE_ID_BINANCE_US,
-				IntervalMs: 4_250,
+				IntervalMs: 2_500,
 				TimeoutMs:  3_000,
 				MaxQueries: 1,
 			},
@@ -164,5 +164,5 @@ func TestStaticExchangeStartupConfigCache(t *testing.T) {
 }
 
 func TestStaticExchangeStartupConfigCacheLength(t *testing.T) {
-	require.Len(t, constants.StaticExchangeStartupConfig, 13)
+	require.Len(t, constants.StaticExchangeStartupConfig, 14)
 }

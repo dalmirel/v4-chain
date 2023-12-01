@@ -1,4 +1,4 @@
-export VERSION := $(shell echo $(shell git describe --always --match "v*") | sed 's/^v//')
+export VERSION := $(shell echo $(shell git describe --tags --always --match "protocol/v*") | sed 's/^protocol\/v//')
 BUILDDIR ?= $(CURDIR)/build
 DOCKER := $(shell which docker)
 HTTPS_GIT := https://github.com/dydxprotocol/v4.git
@@ -124,26 +124,8 @@ aws-push-dev4:
 aws-push-dev5:
 	./scripts/build-push-ecr.sh dev5
 
-aws-push-snapshot-dev:
-	./scripts/build-push-ecr.sh dev snapshot
-
-aws-push-snapshot-dev2:
-	./scripts/build-push-ecr.sh dev2 snapshot
-
-aws-push-snapshot-dev3:
-	./scripts/build-push-ecr.sh dev3 snapshot
-
-aws-push-snapshot-dev4:
-	./scripts/build-push-ecr.sh dev4 snapshot
-
-aws-push-snapshot-dev5:
-	./scripts/build-push-ecr.sh dev5 snapshot
-
 aws-push-staging:
 	./scripts/build-push-ecr.sh staging
-
-aws-push-snapshot-staging:
-	./scripts/build-push-ecr.sh staging snapshot
 
 ###############################################################################
 ###                                  Build                                  ###
@@ -168,9 +150,8 @@ build-reproducible-linux-amd64: go.sum $(BUILDDIR)/
 	$(DOCKER) buildx create --name dydxv4builder || true
 	$(DOCKER) buildx use dydxv4builder
 	$(DOCKER) buildx build \
-		--build-arg GO_VERSION=$(GO_VERSION) \
-		--build-arg GIT_VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(COMMIT) \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
 		--build-arg RUNNER_IMAGE=alpine:3.16 \
 		--platform linux/amd64 \
 		-t dydx:local-linux-amd64 \
@@ -184,9 +165,8 @@ build-reproducible-linux-arm64: go.sum $(BUILDDIR)/
 	$(DOCKER) buildx create --name dydxv4builder || true
 	$(DOCKER) buildx use dydxv4builder
 	$(DOCKER) buildx build \
-		--build-arg GO_VERSION=$(GO_VERSION) \
-		--build-arg GIT_VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(COMMIT) \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
 		--build-arg RUNNER_IMAGE=alpine:3.16 \
 		--platform linux/arm64 \
 		-t dydx:local-linux-arm64 \
@@ -246,10 +226,10 @@ test-race:
 	@VERSION=$(VERSION) go test -mod=readonly -race -tags='test_ledger_mock $(build_tags)' ./...
 
 test-cover:
-	@VERSION=$(VERSION) go test -mod=readonly -timeout 12m -coverprofile=coverage.out -covermode=atomic -coverpkg=github.com/dydxprotocol/v4/... -tags='test_ledger_mock $(build_tags)' ./...
+	@VERSION=$(VERSION) go test -mod=readonly -timeout 12m -coverprofile=coverage.out -covermode=atomic -coverpkg=github.com/dydxprotocol/v4-chain/protocol/... -tags='test_ledger_mock $(build_tags)' ./...
 
 test-exchanges:
-	@VERSION=$(VERSION) go test -mod=readonly -race -tags='test_ledger_mock exchange_tests $(build_tags)' ./... -run "TestQueryingActualExchanges"
+	@VERSION=$(VERSION) go test -mod=readonly -tags='test_ledger_mock exchange_tests $(build_tags)' github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/client/handler -run "TestQueryingActualExchanges"
 
 test-unit-and-integration:
 	@VERSION=$(VERSION) go test -mod=readonly -tags='integration_test test_ledger_mock $(build_tags)' ./...
@@ -265,7 +245,6 @@ test-container-accept:
 
 test-container-build:
 	$(MAKE) localnet-build
-	@docker build . -t dydxprotocol-localnet -f testing/testnet-local/Dockerfile --no-cache
 	@docker build . -t dydxprotocol-container-test -f testing/containertest/Dockerfile --no-cache
 
 .PHONY: test test-all test-cover test-unit test-race test-container
@@ -295,23 +274,16 @@ format:
 # Note: update github action workflow `proto.yaml` when updating version or images.
 protoVer=0.11.5
 protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
-protoImage=$(DOCKER) run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoImageName)
-
-proto-gen:
-	@echo "Generating Protobuf files"
-	@$(protoImage) sh ./scripts/protocgen.sh
-
-# Note: this should mirror `proto-gen`.
-proto-gen-without-container:
-	@echo "Generating Protobuf files"
-	sh ./scripts/protocgen.sh
+protoImage=$(DOCKER) run --user root --rm -v $(CURDIR)/..:/workspace --workdir /workspace $(protoImageName)
 
 proto-swagger-gen:
 	@make clean
 	@echo "Downloading Protobuf dependencies"
 	@make proto-download-deps
 	@echo "Generating Protobuf Swagger"
-	@$(protoImage) sh ./scripts/protoc-swagger-gen.sh
+	@$(protoImage) sh ./protocol/scripts/protoc-swagger-gen.sh
+	@echo "Generating static files for swagger docs"
+	$(MAKE) update-swagger-docs
 
 SWAGGER_DIR=./swagger-proto
 THIRD_PARTY_DIR=$(SWAGGER_DIR)/third_party
@@ -359,7 +331,7 @@ proto-download-deps:
 	mkdir -p "$(THIRD_PARTY_DIR)/cosmos/ics23/v1" && \
 	curl -sSL https://raw.githubusercontent.com/cosmos/ics23/master/proto/cosmos/ics23/v1/proofs.proto > "$(THIRD_PARTY_DIR)/cosmos/ics23/v1/proofs.proto"
 
-.PHONY: proto-gen proto-swagger-gen
+.PHONY: proto-swagger-gen
 
 
 ###############################################################################
@@ -367,10 +339,13 @@ proto-download-deps:
 ###############################################################################
 
 localnet-new-validator:
-	@docker run --rm -it $(shell docker build . -t dydxprotocol-base && docker build . -q -f ./testing/util/Dockerfile)
+	@docker run --rm -it $(shell docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) . -t dydxprotocol-base && docker build . -q -f ./testing/util/Dockerfile)
 
 localnet-build:
-	@docker build . -t dydxprotocol-base --no-cache
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) . -t dydxprotocol-base --no-cache
+
+localnet-build-amd64:
+	DOCKER_BUILDKIT=1 docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -f Dockerfile . -t dydxprotocol-base --no-cache --platform linux/amd64
 
 localnet-init:
 	rm -rf localnet
@@ -390,11 +365,13 @@ localnet-init:
 
 localnet-compose-up:
 	@echo "Launching localnet at commit ${GIT_COMMIT_HASH}"
-	@docker-compose -f docker-compose.yml up --build --force-recreate $(ARGS)
+	@docker build . -t local:dydxprotocol -f testing/testnet-local/Dockerfile --no-cache
+	@docker-compose -f docker-compose.yml up --force-recreate $(ARGS)
 
 localnet-compose-upd:
 	@echo "Launching localnet at commit ${GIT_COMMIT_HASH}"
-	@docker-compose -f docker-compose.yml up --build --force-recreate -d $(ARGS)
+	@docker build . -t local:dydxprotocol -f testing/testnet-local/Dockerfile --no-cache
+	@docker-compose -f docker-compose.yml up --force-recreate -d $(ARGS)
 
 localnet-start: localnet-init localnet-compose-up
 localnet-startd: localnet-init localnet-compose-upd
@@ -409,3 +386,36 @@ localnet-stop:
 .PHONY: all build-linux install format lint \
 	go-mod-cache draw-deps clean build build-contract-tests-hooks \
 	test test-all test-build test-cover test-unit test-race benchmark
+
+###############################################################################
+###                              Documentation                              ###
+###############################################################################
+
+update-swagger-docs: statik
+	$(BINDIR)/statik -src=client/docs/swagger-ui -dest=client/docs -f -m
+	@if [ -n "$(git status --porcelain)" ]; then \
+		echo "\033[91mSwagger docs are out of sync!!!\033[0m";\
+		exit 1;\
+	else \
+		echo "\033[92mSwagger docs are in sync\033[0m";\
+	fi
+
+.PHONY: update-swagger-docs
+
+###############################################################################
+###                           Sample Prengenesis                            ###
+###############################################################################
+
+# Run at `./protocol` directory.
+update-sample-pregenesis:
+	make build
+	./scripts/genesis/prod_pregenesis.sh build/dydxprotocold
+	cp /tmp/prod-chain/.dydxprotocol/config/sorted_genesis.json ./scripts/genesis/sample_pregenesis.json
+	@echo "Updated ./scripts/genesis/sample_pregenesis.json"
+
+check-sample-pregenesis-up-to-date:
+	$(MAKE) localnet-build
+	@docker build . -t check-sample-pregenesis  -f scripts/genesis/Dockerfile --no-cache
+	@docker run -v $(CURDIR):/workspace check-sample-pregenesis 
+
+.PHONY: update-sample-pregenesis check-sample-pregenesis-up-to-date

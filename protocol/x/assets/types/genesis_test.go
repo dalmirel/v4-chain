@@ -3,8 +3,8 @@ package types_test
 import (
 	"testing"
 
-	"github.com/dydxprotocol/v4/lib"
-	"github.com/dydxprotocol/v4/x/assets/types"
+	"github.com/dydxprotocol/v4-chain/protocol/lib"
+	"github.com/dydxprotocol/v4-chain/protocol/x/assets/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,7 +58,7 @@ func TestGenesisState_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: types.ErrAssetZeroNotUsdc,
+			expectedErr: types.ErrUsdcMustBeAssetZero,
 		},
 		"asset[0] is modified usdc": {
 			genState: &types.GenesisState{
@@ -73,7 +73,7 @@ func TestGenesisState_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: types.ErrAssetZeroNotUsdc,
+			expectedErr: types.ErrUsdcMustBeAssetZero,
 		},
 		"duplicated asset id": {
 			genState: &types.GenesisState{

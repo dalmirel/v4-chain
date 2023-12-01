@@ -4,6 +4,7 @@ package cli_test
 
 import (
 	"fmt"
+	"github.com/dydxprotocol/v4-chain/protocol/app/stoppable"
 	"testing"
 
 	tmcli "github.com/cometbft/cometbft/libs/cli"
@@ -13,13 +14,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/dydxprotocol/v4/dtypes"
-	"github.com/dydxprotocol/v4/testutil/constants"
-	"github.com/dydxprotocol/v4/testutil/network"
-	"github.com/dydxprotocol/v4/testutil/nullify"
-	"github.com/dydxprotocol/v4/x/perpetuals/client/cli"
-	"github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/dtypes"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/network"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/nullify"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/client/cli"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -63,10 +64,12 @@ func networkWithLiquidityTierAndPerpetualObjects(
 	// Generate `n` Perpetuals.
 	for i := 0; i < n; i++ {
 		perpetual := types.Perpetual{
-			Id:            uint32(i),
-			Ticker:        fmt.Sprintf("test_query_ticker_%d", i),
-			FundingIndex:  dtypes.ZeroInt(),
-			LiquidityTier: uint32(i % m),
+			Params: types.PerpetualParams{
+				Id:            uint32(i),
+				Ticker:        fmt.Sprintf("test_query_ticker_%d", i),
+				LiquidityTier: uint32(i % m),
+			},
+			FundingIndex: dtypes.ZeroInt(),
 		}
 		nullify.Fill(&perpetual) //nolint:staticcheck
 		state.Perpetuals = append(state.Perpetuals, perpetual)
@@ -74,6 +77,10 @@ func networkWithLiquidityTierAndPerpetualObjects(
 	buf, err := cfg.Codec.MarshalJSON(&state)
 	require.NoError(t, err)
 	cfg.GenesisState[types.ModuleName] = buf
+
+	t.Cleanup(func() {
+		stoppable.StopServices(t, cfg.GRPCAddress)
+	})
 
 	return network.New(t, cfg), state.LiquidityTiers, state.Perpetuals
 }
@@ -95,7 +102,7 @@ func TestShowPerpetual(t *testing.T) {
 	}{
 		{
 			desc: "found",
-			id:   objs[0].Id,
+			id:   objs[0].Params.Id,
 
 			args: common,
 			obj:  objs[0],
@@ -130,24 +137,24 @@ func TestShowPerpetual(t *testing.T) {
 	}
 }
 
-// Check the recieved perpetual matches with expected.
+// Check the received perpetual matches with expected.
 // FundingIndex field is ignored since it can vary depending on funding-tick epoch.
 // TODO(DEC-606): Improve end-to-end testing related to ticking epochs.
 func checkExpectedPerp(t *testing.T, expected types.Perpetual, received types.Perpetual) {
 	if diff := cmp.Diff(expected, received, cmpopts.IgnoreFields(types.Perpetual{}, "FundingIndex")); diff != "" {
-		t.Errorf("resp.Perpetual mismatch (-want +recieved):\n%s", diff)
+		t.Errorf("resp.Perpetual mismatch (-want +received):\n%s", diff)
 	}
 }
 
-// Check the recieved perpetual object matches one of the expected perpetuals.
+// Check the received perpetual object matches one of the expected perpetuals.
 func expectedContainsReceived(t *testing.T, expectedPerps []types.Perpetual, received types.Perpetual) {
 	for _, expected := range expectedPerps {
-		if received.Id == expected.Id {
+		if received.Params.Id == expected.Params.Id {
 			checkExpectedPerp(t, expected, received)
 			return
 		}
 	}
-	t.Errorf("Recieved perp (%v) not found in expected perps (%v)", received, expectedPerps)
+	t.Errorf("Received perp (%v) not found in expected perps (%v)", received, expectedPerps)
 }
 
 func TestListPerpetual(t *testing.T) {
@@ -210,11 +217,11 @@ func TestListPerpetual(t *testing.T) {
 		cmpOptions := []cmp.Option{
 			cmpopts.IgnoreFields(types.Perpetual{}, "FundingIndex"),
 			cmpopts.SortSlices(func(x, y types.Perpetual) bool {
-				return x.Id > y.Id
+				return x.Params.Id > y.Params.Id
 			}),
 		}
 		if diff := cmp.Diff(objs, resp.Perpetual, cmpOptions...); diff != "" {
-			t.Errorf("resp.Perpetual mismatch (-want +recieved):\n%s", diff)
+			t.Errorf("resp.Perpetual mismatch (-want +received):\n%s", diff)
 		}
 	})
 }

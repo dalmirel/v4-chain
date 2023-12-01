@@ -1,40 +1,35 @@
 package msgs
 
 import (
-	"time"
+	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/dydxprotocol/v4/testutil/constants"
-	blocktimetypes "github.com/dydxprotocol/v4/x/blocktime/types"
-	bridgetypes "github.com/dydxprotocol/v4/x/bridge/types"
-	clobtypes "github.com/dydxprotocol/v4/x/clob/types"
-	perptypes "github.com/dydxprotocol/v4/x/perpetuals/types"
-	pricestypes "github.com/dydxprotocol/v4/x/prices/types"
+	"github.com/dydxprotocol/v4-chain/protocol/testutil/constants"
+	bridgetypes "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types"
+	clobtypes "github.com/dydxprotocol/v4-chain/protocol/x/clob/types"
+	perptypes "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types"
+	pricestypes "github.com/dydxprotocol/v4-chain/protocol/x/prices/types"
 )
 
 var (
 	// AppInjectedMsgSamples are msgs that are injected into the block by the proposing validator.
 	// These messages are reserved for proposing validator's use only.
 	AppInjectedMsgSamples = map[string]sdk.Msg{
-		// blocktime
-		"/dydxprotocol.blocktime.MsgIsDelayedBlock": &blocktimetypes.MsgIsDelayedBlock{
-			DelayDuration: time.Second,
-		},
-		"/dydxprotocol.blocktime.MsgIsDelayedBlockResponse": nil,
-
 		// bridge
-		"/dydxprotocol.bridge.MsgAcknowledgeBridge": &bridgetypes.MsgAcknowledgeBridge{
-			Event: bridgetypes.BridgeEvent{
-				Id: 0,
-				Coin: sdk.NewCoin(
-					"bridge-token",
-					sdk.NewIntFromUint64(1234),
-				),
-				Address: constants.Alice_Num0.Owner,
+		"/dydxprotocol.bridge.MsgAcknowledgeBridges": &bridgetypes.MsgAcknowledgeBridges{
+			Events: []bridgetypes.BridgeEvent{
+				{
+					Id: 0,
+					Coin: sdk.NewCoin(
+						"bridge-token",
+						sdkmath.NewIntFromUint64(1234),
+					),
+					Address: constants.Alice_Num0.Owner,
+				},
 			},
 		},
-		"/dydxprotocol.bridge.MsgAcknowledgeBridgeResponse": nil,
+		"/dydxprotocol.bridge.MsgAcknowledgeBridgesResponse": nil,
 
 		// clob
 		"/dydxprotocol.clob.MsgProposedOperations": &clobtypes.MsgProposedOperations{

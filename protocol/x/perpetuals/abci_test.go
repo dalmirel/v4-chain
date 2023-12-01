@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/dydxprotocol/v4/mocks"
-	keepertest "github.com/dydxprotocol/v4/testutil/keeper"
-	"github.com/dydxprotocol/v4/x/perpetuals"
+	"github.com/dydxprotocol/v4-chain/protocol/mocks"
+	keepertest "github.com/dydxprotocol/v4-chain/protocol/testutil/keeper"
+	"github.com/dydxprotocol/v4-chain/protocol/x/perpetuals"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,19 +64,19 @@ func TestEndBlocker(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// Initialize Mocks and Context.
 			mockKeeper := &mocks.PerpetualsKeeper{}
-			ctx, _, _, _, _ := keepertest.PerpetualsKeepers(t)
+			pc := keepertest.PerpetualsKeepers(t)
 
 			// Setup mocks.
-			tc.setupMocks(ctx, mockKeeper)
+			tc.setupMocks(pc.Ctx, mockKeeper)
 
 			if tc.expectedErr != nil {
 				// Call EndBlocker.
 				require.PanicsWithValue(t, tc.expectedErr.Error(), func() {
 					//nolint:errcheck
-					perpetuals.EndBlocker(ctx, mockKeeper)
+					perpetuals.EndBlocker(pc.Ctx, mockKeeper)
 				})
 			} else {
-				perpetuals.EndBlocker(ctx, mockKeeper)
+				perpetuals.EndBlocker(pc.Ctx, mockKeeper)
 
 				// Assert mock expectations if no error was expected.
 				result := mockKeeper.AssertExpectations(t)
